@@ -28,20 +28,13 @@ def visualize(data):
     # res.plot()
 
 
-# def period(x, y):
-#     # 3 knots
-#     spl = splrep(x, y, t=3)
-
-
 def series_analysis(data):
     values = data['value']
     posdata = values[values > 0]
     bcdata, lam = stats.boxcox(posdata)
-    print(lam)
     valuest = boxcox1p(values, lam)
-    # Frequency
-    # periodicity = period(values, times)
-    decompose = seasonal_decompose(values, period=2)
+
+    decompose = seasonal_decompose(values.interpolate(), period=52)
     seasonality = 1 - (np.var(valuest - decompose.seasonal - decompose.trend) / np.var(valuest - decompose.trend))
     trend = 1 - (np.var(valuest - decompose.seasonal - decompose.trend) / np.var(valuest - decompose.seasonal))
     # Represents long-range dependence.
@@ -54,8 +47,6 @@ def series_analysis(data):
     kurtosis = fc.kurtosis(values)
     # A measure of long-term memory of time series
     hurst = nolds.hurst_rs(values)
-    # A measure of the rate of divergence of nearby trajectories.
-    lyapunov = 0 #nolds.lyap_e(values)
 
-    return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov
+    return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst
 
