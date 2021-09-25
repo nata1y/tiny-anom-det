@@ -34,7 +34,7 @@ def series_analysis(data):
     bcdata, lam = stats.boxcox(posdata)
     valuest = boxcox1p(values, lam)
 
-    decompose = seasonal_decompose(values.interpolate(), period=52)
+    decompose = seasonal_decompose(values.interpolate(), period=12)
     seasonality = 1 - (np.var(valuest - decompose.seasonal - decompose.trend) / np.var(valuest - decompose.trend))
     trend = 1 - (np.var(valuest - decompose.seasonal - decompose.trend) / np.var(valuest - decompose.seasonal))
     # Represents long-range dependence.

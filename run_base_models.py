@@ -2,6 +2,7 @@ import copy
 import os
 import time
 
+from matplotlib import pyplot
 from sklearn import metrics, preprocessing
 from sklearn.cluster import DBSCAN, KMeans
 from sklearn.covariance import EllipticEnvelope
@@ -17,7 +18,7 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 from analysis.preanalysis import visualize, series_analysis
-from analysis.postanalysis import confusion_visualization
+from analysis.postanalysis import confusion_visualization, plotSARIMAX
 from analysis.time_series_feature_analysis import analyse_series_properties
 from models.statistical_models import fit_sarima
 from statsmodels.tsa.api import ExponentialSmoothing
@@ -28,15 +29,15 @@ from sklearn.metrics import precision_recall_fscore_support
 
 models = {
           # scale
-          # 'knn': KMeans(n_clusters=2),
+          'knn': KMeans(n_clusters=2),
           # don't scale
-          # 'lof': LocalOutlierFactor(n_neighbors=4, novelty=True),
+          'lof': LocalOutlierFactor(n_neighbors=4, novelty=True),
           # scale
-          # 'ocsvm': OneClassSVM(kernel='poly', gamma='scale', nu=0.9),
-          'dbscan': DBSCAN(eps=1, min_samples=3),
+          'ocsvm': OneClassSVM(kernel='poly', gamma='scale', nu=0.9),
+          # 'dbscan': DBSCAN(eps=1, min_samples=3),
           # egads hyperparams, no normalization
-          # 'dbscan': DBSCAN(eps=500, min_samples=2),
-          # 'sarima': SARIMAX,
+          'dbscan': DBSCAN(eps=500, min_samples=2),
+          'sarima': SARIMAX,
           # no norm
           # 'isolation_forest': IsolationForest(),
           # 'es': ExponentialSmoothing()
@@ -49,28 +50,34 @@ le = preprocessing.LabelEncoder().fit([-1, 1])
 anomaly_window = 60
 
 
-def fit_base_model():
+def fit_base_model(model):
     # visualize(data)
     trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst = \
         series_analysis(data)
 
-    num_windows = data_train.shape[0] // anomaly_window + 1
-    for window in np.array_split(data_train, num_windows):
-        X, y = window['value'], window['is_anomaly']
-        X = X.values.reshape(-1, 1)
-        scaler = preprocessing.StandardScaler().fit(X)
-        X = scaler.transform(X)
+    if name == 'sarima':
 
-        if name in ['sarima']:
-            model_ = copy.deepcopy(model(X))
-            if name == 'sarima':
-                start_time = time.time()
-                results = fit_sarima(X)
-                end_time = time.time()
+        newdf = data_train[['timestamp', 'value']]
+        if dataset == 'yahoo':
+            newdf['timestamp'] = pd.to_datetime(newdf['timestamp'], unit='s')
+        newdf.set_index('timestamp', inplace=True)
 
-                diff = end_time - start_time
-                print(f"Trained model {name} on {filename} for {diff}")
-        else:
+        start_time = time.time()
+        model = fit_sarima(newdf)
+        end_time = time.time()
+
+        diff = end_time - start_time
+        print(f"Trained model {name} on {filename} for {diff}")
+    else:
+        num_windows = data_train.shape[0] // anomaly_window + 1
+        for window in np.array_split(data_train, num_windows):
+            X, y = window['value'], window['is_anomaly']
+
+            if name in ['ocsvm', 'knn']:
+                X = X.values.reshape(-1, 1)
+                scaler = preprocessing.StandardScaler().fit(X)
+                X = scaler.transform(X)
+
             start_time = time.time()
             model.fit(X)
             end_time = time.time()
@@ -79,45 +86,70 @@ def fit_base_model():
             print(f"Trained model {name} on {filename} for {diff}")
 
     num_windows = data_test.shape[0] // anomaly_window + 1
-    f1 = []
-    precision, recall = [], []
+    precision, recall, f1 = [], [], []
     time_total, value_total, y_total, y_pred_total = [], [], [], []
+    full_pred = []
     for window in np.array_split(data_test, num_windows):
         X, y = window['value'], window['is_anomaly']
         value_total += X.tolist()
         X = X.values.reshape(-1, 1)
         time_total += window['timestamp'].tolist()
         y_total += y.tolist()
-        scaler = preprocessing.StandardScaler().fit(X)
-        X = scaler.transform(X)
+
+        if name in ['ocsvm', 'knn']:
+            scaler = preprocessing.StandardScaler().fit(X)
+            X = scaler.transform(X)
+        y_pred = []
 
         if name in ['sarima']:
-            continue
-            print(results.summary().tables[1])
-            results.plot_diagnostics(figsize=(18, 8))
-            pyplot.show()
+            newdf = window[['timestamp', 'value']]
+            if dataset == 'yahoo':
+                newdf['timestamp'] = pd.to_datetime(newdf['timestamp'], unit='s')
+            newdf.set_index('timestamp', inplace=True)
+
+            # add new observation
+            model = model.append(newdf)
+            pred = model.get_prediction(start=y.index.min(), dynamic=False, alpha=0.001)
+            full_pred.append(pred)
+            pred_ci = pred.conf_int()
+            for idx, row in pred_ci.iterrows():
+                if row['lower value'] <= newdf.loc[idx, 'value'] <= row['upper value']:
+                    y_pred.append(0)
+                else:
+                    y_pred.append(1)
+
+        elif name == 'dbscan':
+            y_pred = model.fit_predict(X)
+            try:
+                y_pred = le.transform(y_pred)
+            except:
+                pass
         else:
-            if name == 'dbscan':
-                y_pred = model.fit_predict(X)
-            else:
-                y_pred = model.predict(X)
+            y_pred = model.predict(X)
             try:
                 y_pred = le.transform(y_pred)
             except:
                 pass
 
-            y_pred_total += y_pred.tolist()
-            # print(metrics.classification_report(y, y_pred))
-            met = precision_recall_fscore_support(y, y_pred, average='weighted')
-            precision.append(met[0])
-            recall.append(met[1])
-            f1.append(met[2])
-            print(f"Model {name} has f1-score {f1}")
+        y_pred_total += y_pred
+        # print(metrics.classification_report(y, y_pred))
+        met = precision_recall_fscore_support(y, y_pred, average='weighted')
+        precision.append(met[0])
+        recall.append(met[1])
+        f1.append(met[2])
+        print(f"Model {name} has f1-score {f1}")
 
     try:
-        stats = pd.read_csv(f'results/yahoo_{type}_stats.csv')
+        stats = pd.read_csv(f'results/yahoo_{type}_stats_{name}.csv')
     except:
         stats = pd.DataFrame([])
+
+    newdf = data_test[['timestamp', 'value']]
+    if dataset == 'yahoo':
+        newdf['timestamp'] = pd.to_datetime(newdf['timestamp'], unit='s')
+    newdf.set_index('timestamp', inplace=True)
+
+    plotSARIMAX(full_pred, newdf, dataset, type, filename, data_test)
 
     confusion_visualization(time_total, value_total, y_total, y_pred_total,
                             dataset, name, filename.replace('.csv', ''), type)
@@ -141,7 +173,7 @@ def fit_base_model():
         'min_recall': np.min(recall),
         'num_windows': num_windows
     }, ignore_index=True)
-    stats.to_csv(f'results/yahoo_{type}_stats.csv', index=False)
+    stats.to_csv(f'results/yahoo_{type}_stats_{name}.csv', index=False)
 
 
 if __name__ == '__main__':
@@ -153,9 +185,10 @@ if __name__ == '__main__':
             if os.path.isfile(f):
                 print(f"Training model {name} with data {filename}")
                 data = pd.read_csv(f)
+
                 # 50% train-test split
                 data_train, data_test = np.array_split(data, 2)
 
-                fit_base_model()
+                fit_base_model(model)
 
-        analyse_series_properties(pd.read_csv(f'results/yahoo_{type}_stats.csv'))
+        analyse_series_properties(dataset, type, name)
