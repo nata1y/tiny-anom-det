@@ -16,6 +16,7 @@ def visualize(data):
     print(data['value'].describe())
     pyplot.plot(data['timestamp'], data['value'])
     pyplot.show()
+    quit()
 
     data['value'].hist()
     pyplot.show()

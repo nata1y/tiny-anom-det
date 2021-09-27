@@ -4,6 +4,7 @@ import itertools
 import numpy as np
 from sklearn.metrics import mean_squared_log_error
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import pandas as pd
@@ -114,5 +115,78 @@ class SARIMA:
         ax.set_ylabel('Values')
         plt.legend()
         plt.savefig(f'results/imgs/{dataset}/{datatype}/sarima/sarima_{filename.replace(".csv", "")}_full.png')
+
+        plt.close('all')
+
+
+class ExpSmoothing:
+    model = None
+    dataset = ''
+    full_pred = pd.DataFrame([], columns=['upper value', 'lower value', 'pred'])
+
+    def _get_time_index(self, data):
+        if self.dataset == 'yahoo':
+            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
+        data.set_index('timestamp', inplace=True)
+        return data
+
+    def fit(self, data, dataset):
+        self.dataset = dataset
+        data = self._get_time_index(data)
+        self.model = ExponentialSmoothing(data,
+                                          seasonal_periods=12,
+                                          trend="add",
+                                          seasonal="add",
+                                          damped_trend=True,
+                                          initialization_method="estimated",
+                                          ).fit()
+
+    def predict(self, newdf, window):
+        y_pred = []
+        idxs = newdf['value'].tolist()
+        newdf = self._get_time_index(newdf)
+
+        pred = self.model.forecast(window)
+        simulations = self.model.simulate(window, repetitions=100, error="add")
+        simulations['upper value'] = simulations.max(axis=1)
+        simulations['lower value'] = simulations.min(axis=1)
+        simulations['pred'] = pred
+        self.full_pred = pd.concat([self.full_pred, simulations[['upper value', 'lower value', 'pred']]])
+        for idx, (dummy, row) in zip(idxs, simulations.iterrows()):
+            try:
+                if row['lower value'] <= newdf['value'].tolist()[int(idx)] <= row['upper value']:
+                    y_pred.append(0)
+                else:
+                    y_pred.append(1)
+            except:
+                pass
+
+        return y_pred
+
+    def plot(self, y, dataset, datatype, filename, full_test_data):
+        y = self._get_time_index(y)
+        # 0 1970-01-01 00:00:01  0.000000
+        # yahoo dataset only!!!
+        # TODO: fix
+        ax = y['1970':].plot(label='observed')
+
+        for idx, pred in self.full_pred.iterrows():
+            ax.plot(ax=pred['pred'], label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
+            ax.fill_between(pred.index,
+                            pred['lower value'],
+                            pred['upper value'], color='k', alpha=.2)
+
+            if (pred['lower value'] > y['value'].tolist()[idx] or
+                y['value'].tolist()[idx] > pred['upper value']) and \
+                    full_test_data['is_anomaly'].tolist()[idx] == 0:
+                ax.scatter(idx, y.loc[idx, 'value'], color='r')
+            if (pred['lower value'] <= y['value'].tolist()[idx] <= pred['upper value']) \
+                    and full_test_data['is_anomaly'].tolist()[idx] == 1:
+                ax.scatter(idx, y.loc[idx, 'value'], color='darkmagenta')
+
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Values')
+        plt.legend()
+        plt.savefig(f'results/imgs/{dataset}/{datatype}/es/es_{filename.replace(".csv", "")}_full.png')
 
         plt.close('all')
