@@ -133,7 +133,7 @@ def fit_base_model(model_params, for_optimization=True):
                 y_pred = model.predict(window[['timestamp', 'value']])
             elif name == 'es':
                 y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
-                stacked_res = pd.concat([stacked_res, window[['timestamp', 'value']]])
+                stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
                 model.fit(stacked_res, dataset)
             elif name == 'lstm':
                 y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1))
