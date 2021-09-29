@@ -19,10 +19,11 @@ def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, d
     fn = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == 1 and pred_val[i] == 0]
 
     fig, ax = plt.subplots()
-    ax.scatter([t[0] for t in tp], [t[1] for t in tp], color='k', s=1)
-    ax.scatter([t[0] for t in tn], [t[1] for t in tn], color='k', s=1)
-    ax.scatter([t[0] for t in fp], [t[1] for t in fp], color='r', s=5)
-    ax.scatter([t[0] for t in fn], [t[1] for t in fn], color='y', s=5)
+    ax.plot(x, y, color='grey', lw=0.5, zorder=0)
+    # ax.scatter([t[0] for t in tp], [t[1] for t in tp], color='k', s=1)
+    # ax.scatter([t[0] for t in tn], [t[1] for t in tn], color='k', s=1)
+    ax.scatter([t[0] for t in fp], [t[1] for t in fp], color='r', s=5, zorder=5)
+    ax.scatter([t[0] for t in fn], [t[1] for t in fn], color='y', s=5, zorder=5)
 
     legend_elements = [Line2D([0], [0], color='k', lw=2, label='Correct'),
                        Line2D([0], [0], marker='o', color='r', markersize=5, label='FP'),

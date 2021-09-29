@@ -37,7 +37,7 @@ models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, []),
           # don't scale novelty=True
-          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=10, name='n_neighbors')]),
+          'lof': (LocalOutlierFactor, [Integer(low=1, high=20, name='n_neighbors')]),
           # scale gamma='scale'
           # 'ocsvm': (OneClassSVM,
           #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')]),
@@ -47,7 +47,7 @@ models = {
           # 'sarima': (SARIMA, []),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')]),
-          'es': (ExpSmoothing, []),
+          # 'es': (ExpSmoothing, []),
           # 'stl': (STL, []),
           # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')]),
           # 'sr-cnn': []
@@ -196,7 +196,6 @@ def fit_base_model(model_params, for_optimization=True):
     return np.mean(f1)
 
 
-# monitor function for BO optimization intermediate results
 def monitor(res):
     print('run_score: %s' % str(res.func_vals[-1]))
     print('run_parameters: %s' % str(res.x_iters[-1]))
@@ -213,8 +212,8 @@ if __name__ == '__main__':
                 data = pd.read_csv(f)
 
                 if name not in ['knn', 'sarima', 'es']:
-                ################ Bayesian optimization of hyperparams ###################################################
-                    bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=20, random_state=1,
+                ################ Bayesian optimization ###################################################
+                    bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=10, random_state=13,
                                             verbose=False)
 
                     print(f"Found hyper parameters for {name}: {bo_result.x}")
