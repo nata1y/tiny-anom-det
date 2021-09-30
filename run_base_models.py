@@ -117,7 +117,9 @@ def fit_base_model(model_params, for_optimization=True):
     idx = 0
     stacked_res = data_train[['timestamp', 'value']]
 
+    pred_time = []
     for start in range(0, data_test.shape[0], anomaly_window):
+        start_time = time.time()
         try:
             window = data_test.iloc[start:start + anomaly_window]
             X, y = window['value'], window['is_anomaly']
@@ -154,6 +156,8 @@ def fit_base_model(model_params, for_optimization=True):
         except Exception as e:
             print(e)
             raise e
+        end_time = time.time()
+        pred_time.append((end_time - start_time))
 
     if not for_optimization:
         # visualize(data)
@@ -176,7 +180,6 @@ def fit_base_model(model_params, for_optimization=True):
         stats = stats.append({
             'model': name,
             'dataset': filename.replace('.csv', ''),
-            # 'periodicity': periodicity,
             'trend': trend,
             'seasonality': seasonality,
             'autocorrelation': autocrr,
@@ -190,7 +193,8 @@ def fit_base_model(model_params, for_optimization=True):
             'mean_precision': np.mean(precision),
             'min_precision': np.min(precision),
             'mean_recall': np.mean(recall),
-            'min_recall': np.min(recall)
+            'min_recall': np.min(recall),
+            'prediction_time': np.mean(pred_time)
         }, ignore_index=True)
         stats.to_csv(f'results/yahoo_{type}_stats_{name}.csv', index=False)
 
