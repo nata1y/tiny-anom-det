@@ -48,6 +48,8 @@ def series_analysis(data):
     kurtosis = fc.kurtosis(values)
     # A measure of long-term memory of time series
     hurst = nolds.hurst_rs(values)
+    # chaos of a system
+    lyapunov_e = np.mean(nolds.lyap_e(values))
 
-    return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst
+    return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov_e
 

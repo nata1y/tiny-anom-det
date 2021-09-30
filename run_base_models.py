@@ -35,9 +35,9 @@ from utils import create_dataset
 
 models = {
           # scale, n_clusters = 2
-          # 'knn': (KMeans, []),
+          'knn': (KMeans, []),
           # don't scale novelty=True
-          'lof': (LocalOutlierFactor, [Integer(low=1, high=20, name='n_neighbors')]),
+          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=20, name='n_neighbors')]),
           # scale gamma='scale'
           # 'ocsvm': (OneClassSVM,
           #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')]),
@@ -84,10 +84,6 @@ def fit_base_model(model_params, for_optimization=True):
         model = IsolationForest(n_estimators=model_params[0])
     elif name == 'lstm':
         model = LSTM_autoencoder([anomaly_window, 1],  dataset, type, filename.replace(".csv", ""), threshold=model_params[0])
-
-    # visualize(data)
-    trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst = \
-        series_analysis(data)
 
     if name in ['sarima', 'es']:
 
@@ -148,7 +144,7 @@ def fit_base_model(model_params, for_optimization=True):
                 pass
 
             idx += 1
-            y_pred_total += y_pred
+            y_pred_total += funcy.lflatten(y_pred)
             # print(metrics.classification_report(y, y_pred))
             met = precision_recall_fscore_support(y, y_pred, average='weighted')
             precision.append(met[0])
@@ -160,6 +156,10 @@ def fit_base_model(model_params, for_optimization=True):
             raise e
 
     if not for_optimization:
+        # visualize(data)
+        trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
+            series_analysis(data)
+
         try:
             stats = pd.read_csv(f'results/yahoo_{type}_stats_{name}.csv')
         except:
@@ -184,6 +184,7 @@ def fit_base_model(model_params, for_optimization=True):
             'skewness': skewness,
             'kurtosis': kurtosis,
             'hurst': hurst,
+            'mean_lyapunov_e': lyapunov,
             'mean_f1': np.mean(f1),
             'min_f1': np.min(f1),
             'mean_precision': np.mean(precision),
