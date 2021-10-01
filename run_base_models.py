@@ -35,21 +35,22 @@ from utils import create_dataset
 
 models = {
           # scale, n_clusters = 2
-          'knn': (KMeans, []),
+          # 'knn': (KMeans, [], []),
           # don't scale novelty=True
-          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=20, name='n_neighbors')]),
+          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=20, name='n_neighbors')], [5]),
           # scale gamma='scale'
           # 'ocsvm': (OneClassSVM,
-          #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')]),
+          #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')],
+          #           [0.85, 'poly']),
           # 'dbscan': DBSCAN(eps=1, min_samples=3),
           # egads hyperparams, no normalization
-          # 'dbscan': (DBSCAN, [Integer(low=1, high=100, name='eps'), Integer(low=1, high=10, name='min_samples')]),
-          # 'sarima': (SARIMA, []),
+          # 'dbscan': (DBSCAN, [Integer(low=1, high=100, name='eps'), Integer(low=1, high=10, name='min_samples')], [1, 3]),
+          'sarima': (SARIMA, [], []),
           # no norm
-          # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')]),
-          # 'es': (ExpSmoothing, []),
+          'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
+          'es': (ExpSmoothing, [], []),
           # 'stl': (STL, []),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')]),
+          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [7.0]),
           # 'sr-cnn': []
           }
 root_path = os.getcwd()
@@ -102,15 +103,22 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     else:
-        for start in range(0, data_test.shape[0], anomaly_window):
-            window = data_test.iloc[start:start + anomaly_window]
-            X, y = window[['value']], window['is_anomaly']
-            start_time = time.time()
-            model.fit(X)
-            end_time = time.time()
+        X, y = data_test[['value']], data_test['is_anomaly']
+        start_time = time.time()
+        model.fit(X)
+        end_time = time.time()
 
-            diff = end_time - start_time
-            print(f"Trained model {name} on {filename} for {diff}")
+        diff = end_time - start_time
+        print(f"Trained model {name} on {filename} for {diff}")
+        # for start in range(0, data_test.shape[0], anomaly_window):
+        #     window = data_test.iloc[start:start + anomaly_window]
+        #     X, y = window[['value']], window['is_anomaly']
+        #     start_time = time.time()
+        #     model.fit(X)
+        #     end_time = time.time()
+        #
+        #     diff = end_time - start_time
+        #     print(f"Trained model {name} on {filename} for {diff}")
 
     precision, recall, f1 = [], [], []
     time_total, value_total, y_total, y_pred_total = [], [], [], []
@@ -147,8 +155,9 @@ def fit_base_model(model_params, for_optimization=True):
 
             idx += 1
             y_pred_total += funcy.lflatten(y_pred)
+
             # print(metrics.classification_report(y, y_pred))
-            met = precision_recall_fscore_support(y, y_pred, average='weighted')
+            met = precision_recall_fscore_support(y, y_pred[:len(list(y))], average='weighted')
             precision.append(met[0])
             recall.append(met[1])
             f1.append(met[2])
@@ -187,7 +196,7 @@ def fit_base_model(model_params, for_optimization=True):
             'skewness': skewness,
             'kurtosis': kurtosis,
             'hurst': hurst,
-            'mean_lyapunov_e': lyapunov,
+            'max_lyapunov_e': lyapunov,
             'mean_f1': np.mean(f1),
             'min_f1': np.min(f1),
             'mean_precision': np.mean(precision),
@@ -207,8 +216,8 @@ def monitor(res):
 
 
 if __name__ == '__main__':
-    dataset, type = 'yahoo', 'real'
-    for name, (model, bo_space) in models.items():
+    dataset, type = 'yahoo', 'synthetic'
+    for name, (model, bo_space, def_params) in models.items():
         train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
         for filename in os.listdir(train_data_path):
             f = os.path.join(train_data_path, filename)
@@ -216,15 +225,41 @@ if __name__ == '__main__':
                 print(f"Training model {name} with data {filename}")
                 data = pd.read_csv(f)
 
-                if name not in ['knn', 'sarima', 'es']:
-                ################ Bayesian optimization ###################################################
-                    bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=10, random_state=13,
-                                            verbose=False)
+                fit_base_model(def_params, for_optimization=False)
 
-                    print(f"Found hyper parameters for {name}: {bo_result.x}")
-
-                    fit_base_model(bo_result.x, for_optimization=False)
-                else:
-                    fit_base_model(None, for_optimization=False)
+                # if name not in ['knn', 'sarima', 'es']:
+                # ################ Bayesian optimization ###################################################
+                #     bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=10, random_state=13,
+                #                             verbose=False)
+                #
+                #     print(f"Found hyper parameters for {name}: {bo_result.x}")
+                #
+                #     fit_base_model(bo_result.x, for_optimization=False)
+                # else:
+                #     fit_base_model(def_params, for_optimization=False)
 
         analyse_series_properties(dataset, type, name)
+        try:
+            stats = pd.read_csv(f'results/yahoo_{type}_stats_{name}.csv')
+            stats = stats.append({
+                'model': name,
+                'dataset': 'all-' + type,
+                'trend': np.mean(stats['trend'].tolist()),
+                'seasonality': np.mean(stats['seasonality'].tolist()),
+                'autocorrelation': np.mean(stats['autocorrelation'].tolist()),
+                'non-linearity': np.mean(stats['non-linearity'].tolist()),
+                'skewness': np.mean(stats['skewness'].tolist()),
+                'kurtosis': np.mean(stats['kurtosis'].tolist()),
+                'hurst': np.mean(stats['hurst'].tolist()),
+                'mean_lyapunov_e': np.mean(stats['mean_lyapunov_e'].tolist()),
+                'mean_f1': np.mean(stats['mean_f1'].tolist()),
+                'min_f1': np.min(stats['min_f1'].tolist()),
+                'mean_precision': np.mean(stats['mean_precision'].tolist()),
+                'min_precision': np.min(stats['min_precision'].tolist()),
+                'mean_recall': np.mean(stats['mean_recall'].tolist()),
+                'min_recall': np.min(stats['min_recall'].tolist()),
+                'prediction_time': np.mean(stats['prediction_time'].tolist())
+            }, ignore_index=True)
+            stats.to_csv(f'results/yahoo_{type}_stats_{name}.csv', index=False)
+        except:
+            pass

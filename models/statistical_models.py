@@ -14,7 +14,9 @@ import matplotlib.pyplot as plt
 class SARIMA:
     model = None
     dataset = ''
-    full_pred = []
+
+    def __init__(self):
+        self.full_pred = []
 
     def _get_time_index(self, data):
         if self.dataset == 'yahoo':
@@ -72,9 +74,11 @@ class SARIMA:
 
         # add new observation
         self.model = self.model.append(newdf)
-        pred = self.model.get_prediction(start=newdf.index.min(), dynamic=False, alpha=0.001)
+
+        pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(), dynamic=False, alpha=0.001)
         self.full_pred.append(pred)
         pred_ci = pred.conf_int()
+
         for idx, row in pred_ci.iterrows():
             if row['lower value'] <= newdf.loc[idx, 'value'] <= row['upper value']:
                 y_pred.append(0)
@@ -85,10 +89,10 @@ class SARIMA:
 
     def plot(self, y, dataset, datatype, filename, full_test_data):
         y = self._get_time_index(y)
+        full_test_data = self._get_time_index(full_test_data)
         ax = y['value'].plot(label='observed')
 
         idx = 1
-        idx2 = 0
         for _, pred in enumerate(self.full_pred):
             pred_ci = pred.conf_int()
             pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
@@ -96,15 +100,16 @@ class SARIMA:
                             pred_ci.iloc[:, 0],
                             pred_ci.iloc[:, 1], color='k', alpha=.2)
 
+            print(full_test_data)
             for tm, row in pred_ci.iterrows():
-                if (row['lower value'] > y['value'].tolist()[idx2] or
-                    y['value'].tolist()[idx2] > row['upper value']) and \
-                        full_test_data['is_anomaly'].tolist()[idx2] == 0:
+                print(tm)
+                if (row['lower value'] > y.loc[tm, 'value'] or
+                    y.loc[tm, 'value'] > row['upper value']) and \
+                        full_test_data.loc[tm, 'is_anomaly'] == 0:
                     ax.scatter(tm, y.loc[tm, 'value'], color='r')
-                if (row['lower value'] <= y['value'].tolist()[idx2] <= row['upper value']) \
-                        and full_test_data['is_anomaly'].tolist()[idx2] == 1:
+                if (row['lower value'] <= y.loc[tm, 'value'] <= row['upper value']) \
+                        and full_test_data.loc[tm, 'is_anomaly'] == 1:
                     ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
-                idx2 += 1
 
             idx += 1
 
@@ -114,6 +119,8 @@ class SARIMA:
         plt.savefig(f'results/imgs/{dataset}/{datatype}/sarima/sarima_{filename.replace(".csv", "")}_full.png')
 
         plt.close('all')
+        plt.clf()
+        self.full_pred = []
 
 
 class ExpSmoothing:

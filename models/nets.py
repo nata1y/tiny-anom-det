@@ -2,6 +2,7 @@
 import funcy
 from tensorflow import keras
 from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
 
 import plotly.graph_objects as go
 
@@ -9,12 +10,14 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDistributed
 import numpy as np
 
+print(f'Running on GPU {tf.test.is_built_with_cuda()}. Devices: {tf.config.list_physical_devices("GPU")}')
+
 
 class LSTM_autoencoder():
     model = None
     loss = []
 
-    def __init__(self, X_shape, dataset, datatype, filename, threshold=0.85):
+    def __init__(self, X_shape, dataset, datatype, filename, threshold=7.0):
         self.model = Sequential()
         self.model.add(LSTM(128, input_shape=(X_shape[0], X_shape[1])))
         self.model.add(Dropout(rate=0.2))
@@ -35,10 +38,18 @@ class LSTM_autoencoder():
         self.history = self.model.fit(X_train, y_train, epochs=100, batch_size=32,
                     callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, mode='min')],
                                       validation_split=0.1,  shuffle=False)
+        self.threshold = 5.0 * np.max(self.history.history['loss'])
+        print(self.threshold)
 
     def predict(self, X):
-        prediction = self.model.predict(X)
-        loss = np.abs(X - prediction).ravel()
+        mean_val = np.mean(X.flatten())
+        Xf = funcy.lflatten(X.flatten())
+        for idx in range(60 - X.shape[1]):
+            Xf.append(mean_val)
+
+        Xf = np.array(Xf).reshape((1, 60, 1))
+        prediction = self.model.predict(Xf)
+        loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
 
         y_pred = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
         self.loss += loss.flatten().tolist()
