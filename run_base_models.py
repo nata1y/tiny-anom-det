@@ -25,6 +25,7 @@ from analysis.preanalysis import visualize, series_analysis
 from analysis.postanalysis import confusion_visualization
 from analysis.time_series_feature_analysis import analyse_series_properties
 from models.nets import LSTM_autoencoder
+from models.sr.main import detect_anomaly
 from models.statistical_models import SARIMA, ExpSmoothing
 from statsmodels.tsa.api import ExponentialSmoothing
 import pandas as pd
@@ -32,6 +33,8 @@ import numpy as np
 from sklearn.metrics import precision_recall_fscore_support
 
 from utils import create_dataset
+from tslearn.metrics import dtw
+from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, DetectMode, SpectralResidual
 
 models = {
           # scale, n_clusters = 2
@@ -44,14 +47,23 @@ models = {
           #           [0.85, 'poly']),
           # 'dbscan': DBSCAN(eps=1, min_samples=3),
           # egads hyperparams, no normalization
-          # 'dbscan': (DBSCAN, [Integer(low=1, high=100, name='eps'), Integer(low=1, high=10, name='min_samples')], [1, 3]),
-          'sarima': (SARIMA, [], []),
+          # 'dbscan': (DBSCAN,
+          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=10, name='min_samples'),
+          #             Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+          #                          'nan_euclidean', dtw], name='metric')],
+          #            [1, 1, dtw]),
+          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.5]),
           # no norm
-          'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
-          'es': (ExpSmoothing, [], []),
+          # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
+          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
-          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [7.0]),
+          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [7.0]),
           # 'sr-cnn': []
+          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
+          #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
+          #                           Integer(low=1, high=100, name='sensitivity')],
+          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99, DetectMode.anomaly_only])
           }
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
@@ -76,11 +88,11 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'ocsvm':
         model = OneClassSVM(gamma='scale', nu=model_params[0], kernel=model_params[1])
     elif name == 'dbscan':
-        model = DBSCAN(eps=model_params[0], min_samples=model_params[1])
+        model = DBSCAN(eps=model_params[0], min_samples=model_params[1], metric=model_params[2])
     elif name == 'sarima':
-        model = SARIMA()
+        model = SARIMA(model_params[0])
     elif name == 'es':
-        model = ExpSmoothing()
+        model = ExpSmoothing(model_params[0])
     elif name == 'isolation_forest':
         model = IsolationForest(n_estimators=model_params[0])
     elif name == 'lstm':
@@ -102,6 +114,11 @@ def fit_base_model(model_params, for_optimization=True):
 
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
+    elif name == 'sr':
+        model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
+                                 score_window=model_params[2], sensitivity=model_params[3],
+                                 detect_mode=DetectMode.anomaly_only)
+        print(model.detect())
     else:
         X, y = data_test[['value']], data_test['is_anomaly']
         start_time = time.time()
@@ -141,6 +158,11 @@ def fit_base_model(model_params, for_optimization=True):
                 y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
                 stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
                 model.fit(stacked_res, dataset)
+            elif name == 'sr':
+                model = SpectralResidual(series=window[['value', 'timestamp']], threshold=model_params[0],
+                                         mag_window=model_params[1], score_window=model_params[2],
+                                         sensitivity=model_params[3], detect_mode=DetectMode.anomaly_only)
+                y_pred = [1 if x else 0 for x in model.detect()['isAnomaly'].tolist()]
             elif name == 'lstm':
                 y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1))
             elif name == 'dbscan':
@@ -216,7 +238,7 @@ def monitor(res):
 
 
 if __name__ == '__main__':
-    dataset, type = 'yahoo', 'synthetic'
+    dataset, type = 'yahoo', 'real'
     for name, (model, bo_space, def_params) in models.items():
         train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
         for filename in os.listdir(train_data_path):
@@ -225,18 +247,18 @@ if __name__ == '__main__':
                 print(f"Training model {name} with data {filename}")
                 data = pd.read_csv(f)
 
-                fit_base_model(def_params, for_optimization=False)
+                # fit_base_model(def_params, for_optimization=False)
 
-                # if name not in ['knn', 'sarima', 'es']:
-                # ################ Bayesian optimization ###################################################
-                #     bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=10, random_state=13,
-                #                             verbose=False)
-                #
-                #     print(f"Found hyper parameters for {name}: {bo_result.x}")
-                #
-                #     fit_base_model(bo_result.x, for_optimization=False)
-                # else:
-                #     fit_base_model(def_params, for_optimization=False)
+                if name not in ['knn']:
+                ################ Bayesian optimization ###################################################
+                    bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=10, random_state=13,
+                                            verbose=False)
+
+                    print(f"Found hyper parameters for {name}: {bo_result.x}")
+
+                    fit_base_model(bo_result.x, for_optimization=False)
+                else:
+                    fit_base_model(def_params, for_optimization=False)
 
         analyse_series_properties(dataset, type, name)
         try:
@@ -251,7 +273,7 @@ if __name__ == '__main__':
                 'skewness': np.mean(stats['skewness'].tolist()),
                 'kurtosis': np.mean(stats['kurtosis'].tolist()),
                 'hurst': np.mean(stats['hurst'].tolist()),
-                'mean_lyapunov_e': np.mean(stats['mean_lyapunov_e'].tolist()),
+                'mean_lyapunov_e': np.mean(stats['max_lyapunov_e'].tolist()),
                 'mean_f1': np.mean(stats['mean_f1'].tolist()),
                 'min_f1': np.min(stats['min_f1'].tolist()),
                 'mean_precision': np.mean(stats['mean_precision'].tolist()),
@@ -261,5 +283,5 @@ if __name__ == '__main__':
                 'prediction_time': np.mean(stats['prediction_time'].tolist())
             }, ignore_index=True)
             stats.to_csv(f'results/yahoo_{type}_stats_{name}.csv', index=False)
-        except:
-            pass
+        except Exception as e:
+            print(e)

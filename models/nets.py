@@ -1,5 +1,6 @@
 # fromhttps://towardsdatascience.com/time-series-of-price-anomaly-detection-with-lstm-11a12ba4f6d9
 import funcy
+import scipy.stats as st
 from tensorflow import keras
 from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
@@ -38,7 +39,10 @@ class LSTM_autoencoder():
         self.history = self.model.fit(X_train, y_train, epochs=100, batch_size=32,
                     callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, mode='min')],
                                       validation_split=0.1,  shuffle=False)
-        self.threshold = 5.0 * np.max(self.history.history['loss'])
+
+        self.threshold = 1.5 * st.t.interval(alpha=0.99, df=len(self.history.history['loss'])-1,
+                                             loc=np.mean(self.history.history['loss']),
+                                             scale=st.sem(self.history.history['loss']))[1]
         print(self.threshold)
 
     def predict(self, X):

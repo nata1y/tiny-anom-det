@@ -1,6 +1,8 @@
 # from https://github.com/RuoyunCarina-D/Anomly-Detection-SARIMA/blob/master/SARIMA.py
 import copy
 import itertools
+import math
+
 import numpy as np
 from sklearn.metrics import mean_squared_log_error
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
@@ -10,13 +12,16 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from utils import adjust_range
+
 
 class SARIMA:
     model = None
     dataset = ''
 
-    def __init__(self):
+    def __init__(self, conf=1.5):
         self.full_pred = []
+        self.conf = conf
 
     def _get_time_index(self, data):
         if self.dataset == 'yahoo':
@@ -75,12 +80,13 @@ class SARIMA:
         # add new observation
         self.model = self.model.append(newdf)
 
-        pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(), dynamic=False, alpha=0.001)
+        pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(), dynamic=False, alpha=0.05)
         self.full_pred.append(pred)
         pred_ci = pred.conf_int()
 
         for idx, row in pred_ci.iterrows():
-            if row['lower value'] <= newdf.loc[idx, 'value'] <= row['upper value']:
+            if adjust_range(row['lower value'], 'div', self.conf) <= newdf.loc[idx, 'value'] \
+                    <= adjust_range(row['upper value'], 'mult', self.conf):
                 y_pred.append(0)
             else:
                 y_pred.append(1)
@@ -95,19 +101,20 @@ class SARIMA:
         idx = 1
         for _, pred in enumerate(self.full_pred):
             pred_ci = pred.conf_int()
+
             pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
             ax.fill_between(pred_ci.index,
-                            pred_ci.iloc[:, 0],
-                            pred_ci.iloc[:, 1], color='k', alpha=.2)
+                            pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf)),
+                            pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf)),
+                            color='k', alpha=.2)
 
-            print(full_test_data)
             for tm, row in pred_ci.iterrows():
-                print(tm)
-                if (row['lower value'] > y.loc[tm, 'value'] or
-                    y.loc[tm, 'value'] > row['upper value']) and \
+                if (adjust_range(row['lower value'], 'div', self.conf) > y.loc[tm, 'value'] or
+                    y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf)) and \
                         full_test_data.loc[tm, 'is_anomaly'] == 0:
                     ax.scatter(tm, y.loc[tm, 'value'], color='r')
-                if (row['lower value'] <= y.loc[tm, 'value'] <= row['upper value']) \
+                if (adjust_range(row['lower value'], 'div', self.conf) <= y.loc[tm, 'value'] <=
+                    adjust_range(row['upper value'], 'mult', self.conf)) \
                         and full_test_data.loc[tm, 'is_anomaly'] == 1:
                     ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
 
@@ -128,8 +135,9 @@ class ExpSmoothing:
     dataset = ''
     full_pred = []
 
-    def __init__(self):
+    def __init__(self, sims=100):
         self.full_pred = []
+        self.sims = sims
 
     def _get_time_index(self, data_):
         data = copy.deepcopy(data_)
@@ -153,7 +161,7 @@ class ExpSmoothing:
         newdf = self._get_time_index(newdf)
 
         pred = self.model.forecast(min(window, newdf.shape[0]))
-        simulations = self.model.simulate(min(window, newdf.shape[0]), repetitions=100, error="add")
+        simulations = self.model.simulate(min(window, newdf.shape[0]), repetitions=self.sims, error="add")
         simulations['upper value'] = simulations.max(axis=1)
         simulations['lower value'] = simulations.min(axis=1)
         simulations['pred'] = pred
