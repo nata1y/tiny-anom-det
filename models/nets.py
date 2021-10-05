@@ -18,7 +18,7 @@ class LSTM_autoencoder():
     model = None
     loss = []
 
-    def __init__(self, X_shape, dataset, datatype, filename, threshold=7.0):
+    def __init__(self, X_shape, dataset, datatype, filename, magnitude=1.5):
         self.model = Sequential()
         self.model.add(LSTM(128, input_shape=(X_shape[0], X_shape[1])))
         self.model.add(Dropout(rate=0.2))
@@ -29,7 +29,7 @@ class LSTM_autoencoder():
         self.model.compile(optimizer='adam', loss='mae')
         self.model.summary()
 
-        self.threshold = threshold
+        self.magnitude = magnitude
         self.datatype = datatype
         self.dataset = dataset
         self.filename = filename
@@ -40,9 +40,9 @@ class LSTM_autoencoder():
                     callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, mode='min')],
                                       validation_split=0.1,  shuffle=False)
 
-        self.threshold = 1.5 * st.t.interval(alpha=0.99, df=len(self.history.history['loss'])-1,
-                                             loc=np.mean(self.history.history['loss']),
-                                             scale=st.sem(self.history.history['loss']))[1]
+        self.threshold = self.magnitude * st.t.interval(alpha=0.99, df=len(self.history.history['loss'])-1,
+                                                        loc=np.mean(self.history.history['loss']),
+                                                        scale=st.sem(self.history.history['loss']))[1]
         print(self.threshold)
 
     def predict(self, X):
@@ -54,6 +54,10 @@ class LSTM_autoencoder():
         Xf = np.array(Xf).reshape((1, 60, 1))
         prediction = self.model.predict(Xf)
         loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
+
+        self.threshold = self.magnitude * st.t.interval(alpha=0.99, df=len(loss)-1,
+                                                        loc=np.mean(loss),
+                                                        scale=st.sem(loss))[1]
 
         y_pred = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
         self.loss += loss.flatten().tolist()

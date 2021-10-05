@@ -24,7 +24,7 @@ class SARIMA:
         self.conf = conf
 
     def _get_time_index(self, data):
-        if self.dataset == 'yahoo':
+        if self.dataset in ['yahoo', 'kpi']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
         data.set_index('timestamp', inplace=True)
         return data
@@ -141,7 +141,7 @@ class ExpSmoothing:
 
     def _get_time_index(self, data_):
         data = copy.deepcopy(data_)
-        if self.dataset == 'yahoo':
+        if self.dataset in ['yahoo', 'kpi']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
         return data.set_index('timestamp')
 
@@ -166,6 +166,8 @@ class ExpSmoothing:
         simulations['lower value'] = simulations.min(axis=1)
         simulations['pred'] = pred
         self.full_pred.append(simulations[['upper value', 'lower value', 'pred']])
+        simulations['timestamp'] = newdf.index
+        simulations = self._get_time_index(simulations)
 
         for idx, row in simulations.iterrows():
             try:

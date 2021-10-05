@@ -11,8 +11,7 @@ def detect_anomaly(series, threshold, mag_window, score_window, sensitivity, det
 
 
 # if __name__ == '__main__':
-#     root_path = os.getcwd()
-#     dataset, type = 'yahoo', 'synthetic'
+#     dataset, type = 'kpi', 'synthetic'
 #     train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
 #     for filename in os.listdir(train_data_path):
 #         f = os.path.join(train_data_path, filename)

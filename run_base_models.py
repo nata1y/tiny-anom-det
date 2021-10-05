@@ -47,32 +47,37 @@ models = {
           #           [0.85, 'poly']),
           # 'dbscan': DBSCAN(eps=1, min_samples=3),
           # egads hyperparams, no normalization
-          # 'dbscan': (DBSCAN,
-          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=10, name='min_samples'),
-          #             Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-          #                          'nan_euclidean', dtw], name='metric')],
-          #            [1, 1, dtw]),
+          'dbscan': (DBSCAN,
+                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=10, name='min_samples'),
+                      Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+                                   'nan_euclidean', dtw], name='metric')],
+                     [1, 3, 'euclidean']),
           'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.5]),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
-          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
+          'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [7.0]),
+          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [7.0]),
           # 'sr-cnn': []
-          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
-          #                           Integer(low=1, high=100, name='sensitivity')],
-          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99, DetectMode.anomaly_only])
+          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+                                    Integer(low=1, high=30, name='MAG_WINDOW'),
+                                    Integer(low=5, high=50, name='SCORE_WINDOW'),
+                                    Integer(low=1, high=100, name='sensitivity')],
+                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99, DetectMode.anomaly_only])
           }
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 60
+anomaly_window = 60 #1024
+data_test = None
 
 
 def fit_base_model(model_params, for_optimization=True):
+    global data_test
     # 50% train-test split
-    data_train, data_test = np.array_split(data, 2)
+    if dataset == 'kpi':
+        data_train = data
+    else:
+        data_train, data_test = np.array_split(data, 2)
     model = None
     # standardize
     if name not in ['sarima', 'lof', 'isolation_forest', 'es']:
@@ -118,24 +123,31 @@ def fit_base_model(model_params, for_optimization=True):
         model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
                                  detect_mode=DetectMode.anomaly_only)
-        print(model.detect())
+        # print(model.detect())
     else:
-        X, y = data_test[['value']], data_test['is_anomaly']
-        start_time = time.time()
-        model.fit(X)
-        end_time = time.time()
+        if name != 'dbscan':
+            try:
+                X, y = data_test[['value']], data_test['is_anomaly']
+                start_time = time.time()
+                model.fit(X)
+                end_time = time.time()
+            except:
+                X, y = data_test[['value']], data_test['is_anomaly']
+                start_time = time.time()
+                model.fit(X[-25000:])
+                end_time = time.time()
 
-        diff = end_time - start_time
-        print(f"Trained model {name} on {filename} for {diff}")
-        # for start in range(0, data_test.shape[0], anomaly_window):
-        #     window = data_test.iloc[start:start + anomaly_window]
-        #     X, y = window[['value']], window['is_anomaly']
-        #     start_time = time.time()
-        #     model.fit(X)
-        #     end_time = time.time()
-        #
-        #     diff = end_time - start_time
-        #     print(f"Trained model {name} on {filename} for {diff}")
+            diff = end_time - start_time
+            print(f"Trained model {name} on {filename} for {diff}")
+            # for start in range(0, data_test.shape[0], anomaly_window):
+            #     window = data_test.iloc[start:start + anomaly_window]
+            #     X, y = window[['value']], window['is_anomaly']
+            #     start_time = time.time()
+            #     model.fit(X)
+            #     end_time = time.time()
+            #
+            #     diff = end_time - start_time
+            #     print(f"Trained model {name} on {filename} for {diff}")
 
     precision, recall, f1 = [], [], []
     time_total, value_total, y_total, y_pred_total = [], [], [], []
@@ -162,7 +174,11 @@ def fit_base_model(model_params, for_optimization=True):
                 model = SpectralResidual(series=window[['value', 'timestamp']], threshold=model_params[0],
                                          mag_window=model_params[1], score_window=model_params[2],
                                          sensitivity=model_params[3], detect_mode=DetectMode.anomaly_only)
-                y_pred = [1 if x else 0 for x in model.detect()['isAnomaly'].tolist()]
+                try:
+                    y_pred = [1 if x else 0 for x in model.detect()['isAnomaly'].tolist()]
+                except:
+                    y_pred = [0 for _ in range(window.shape[0])]
+
             elif name == 'lstm':
                 y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1))
             elif name == 'dbscan':
@@ -176,19 +192,21 @@ def fit_base_model(model_params, for_optimization=True):
                 pass
 
             idx += 1
-            y_pred_total += funcy.lflatten(y_pred)
+            y_pred_total += [0 if v != 1 else 1 for v in funcy.lflatten(y_pred[:len(list(y))])]
 
             # print(metrics.classification_report(y, y_pred))
             met = precision_recall_fscore_support(y, y_pred[:len(list(y))], average='weighted')
             precision.append(met[0])
             recall.append(met[1])
             f1.append(met[2])
-            print(f"Model {name} has f1-score {f1[-1]}")
+            print(f"Model {name} has f1-score {f1[-1]} on window {start}")
         except Exception as e:
             print(e)
             raise e
         end_time = time.time()
         pred_time.append((end_time - start_time))
+
+    met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
 
     if not for_optimization:
         # visualize(data)
@@ -196,7 +214,7 @@ def fit_base_model(model_params, for_optimization=True):
             series_analysis(data)
 
         try:
-            stats = pd.read_csv(f'results/yahoo_{type}_stats_{name}.csv')
+            stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
         except:
             stats = pd.DataFrame([])
 
@@ -207,6 +225,13 @@ def fit_base_model(model_params, for_optimization=True):
 
         confusion_visualization(time_total, value_total, y_total[:len(y_pred_total)], y_pred_total,
                                 dataset, name, filename.replace('.csv', ''), type)
+
+        try:
+            tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
+            specificity = tn / (tn + fp)
+        except:
+            specificity = None
+            tn, fp, fn, tp = None, None, None, None
 
         stats = stats.append({
             'model': name,
@@ -219,17 +244,21 @@ def fit_base_model(model_params, for_optimization=True):
             'kurtosis': kurtosis,
             'hurst': hurst,
             'max_lyapunov_e': lyapunov,
-            'mean_f1': np.mean(f1),
-            'min_f1': np.min(f1),
-            'mean_precision': np.mean(precision),
-            'min_precision': np.min(precision),
-            'mean_recall': np.mean(recall),
-            'min_recall': np.min(recall),
-            'prediction_time': np.mean(pred_time)
+            'f1': met_total[2],
+            'precision': met_total[0],
+            'recall': met_total[1],
+            'fp': fp,
+            'fn': fn,
+            'tp': tp,
+            'tn': tn,
+            'specificity': specificity,
+            'total_anomalies': data_test['is_anomaly'].tolist().count(1),
+            'prediction_time': np.mean(pred_time),
+            'total_points': data_test.shape[0]
         }, ignore_index=True)
-        stats.to_csv(f'results/yahoo_{type}_stats_{name}.csv', index=False)
+        stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
 
-    return np.mean(f1)
+    return met_total[2]
 
 
 def monitor(res):
@@ -246,42 +275,44 @@ if __name__ == '__main__':
             if os.path.isfile(f):
                 print(f"Training model {name} with data {filename}")
                 data = pd.read_csv(f)
+                if dataset == 'kpi':
+                    data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
 
-                # fit_base_model(def_params, for_optimization=False)
+                fit_base_model(def_params, for_optimization=False)
 
-                if name not in ['knn']:
-                ################ Bayesian optimization ###################################################
-                    bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=10, random_state=13,
-                                            verbose=False)
-
-                    print(f"Found hyper parameters for {name}: {bo_result.x}")
-
-                    fit_base_model(bo_result.x, for_optimization=False)
-                else:
-                    fit_base_model(def_params, for_optimization=False)
+                # if name not in ['knn']:
+                # ################ Bayesian optimization ###################################################
+                #     bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=10, random_state=13,
+                #                             verbose=False)
+                #
+                #     print(f"Found hyper parameters for {name}: {bo_result.x}")
+                #
+                #     fit_base_model(bo_result.x, for_optimization=False)
+                # else:
+                #     fit_base_model(def_params, for_optimization=False)
 
         analyse_series_properties(dataset, type, name)
-        try:
-            stats = pd.read_csv(f'results/yahoo_{type}_stats_{name}.csv')
-            stats = stats.append({
-                'model': name,
-                'dataset': 'all-' + type,
-                'trend': np.mean(stats['trend'].tolist()),
-                'seasonality': np.mean(stats['seasonality'].tolist()),
-                'autocorrelation': np.mean(stats['autocorrelation'].tolist()),
-                'non-linearity': np.mean(stats['non-linearity'].tolist()),
-                'skewness': np.mean(stats['skewness'].tolist()),
-                'kurtosis': np.mean(stats['kurtosis'].tolist()),
-                'hurst': np.mean(stats['hurst'].tolist()),
-                'mean_lyapunov_e': np.mean(stats['max_lyapunov_e'].tolist()),
-                'mean_f1': np.mean(stats['mean_f1'].tolist()),
-                'min_f1': np.min(stats['min_f1'].tolist()),
-                'mean_precision': np.mean(stats['mean_precision'].tolist()),
-                'min_precision': np.min(stats['min_precision'].tolist()),
-                'mean_recall': np.mean(stats['mean_recall'].tolist()),
-                'min_recall': np.min(stats['min_recall'].tolist()),
-                'prediction_time': np.mean(stats['prediction_time'].tolist())
-            }, ignore_index=True)
-            stats.to_csv(f'results/yahoo_{type}_stats_{name}.csv', index=False)
-        except Exception as e:
-            print(e)
+        # try:
+        #     stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+        #     stats = stats.append({
+        #         'model': name,
+        #         'dataset': 'all-' + type,
+        #         'trend': np.mean(stats['trend'].tolist()),
+        #         'seasonality': np.mean(stats['seasonality'].tolist()),
+        #         'autocorrelation': np.mean(stats['autocorrelation'].tolist()),
+        #         'non-linearity': np.mean(stats['non-linearity'].tolist()),
+        #         'skewness': np.mean(stats['skewness'].tolist()),
+        #         'kurtosis': np.mean(stats['kurtosis'].tolist()),
+        #         'hurst': np.mean(stats['hurst'].tolist()),
+        #         'mean_lyapunov_e': np.mean(stats['max_lyapunov_e'].tolist()),
+        #         'mean_f1': np.mean(stats['f1'].tolist()),
+        #         'min_f1': np.min(stats['min_f1'].tolist()),
+        #         'mean_precision': np.mean(stats['mean_precision'].tolist()),
+        #         'min_precision': np.min(stats['min_precision'].tolist()),
+        #         'mean_recall': np.mean(stats['mean_recall'].tolist()),
+        #         'min_recall': np.min(stats['min_recall'].tolist()),
+        #         'prediction_time': np.mean(stats['prediction_time'].tolist())
+        #     }, ignore_index=True)
+        #     stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
+        # except Exception as e:
+        #     print(e)
