@@ -24,9 +24,13 @@ class SARIMA:
         self.conf = conf
 
     def _get_time_index(self, data):
-        if self.dataset in ['yahoo', 'kpi']:
+        if self.dataset in ['yahoo']:
+            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
+        if self.dataset in ['kpi']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
         data.set_index('timestamp', inplace=True)
+        if self.dataset in ['kpi']:
+            data = data.asfreq('60S')
         return data
 
     def fit(self, data, dataset):
@@ -77,10 +81,13 @@ class SARIMA:
         y_pred = []
         newdf = self._get_time_index(newdf)
 
-        # add new observation
-        self.model = self.model.append(newdf)
+        # # add new observation
+        # print(self.model._get_prediction_index(start, end))
+        # refit=True
+        self.model = self.model.append(newdf, index=newdf.index)
 
-        pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(), dynamic=False, alpha=0.05)
+        pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
+                                         dynamic=False, alpha=0.05, index=newdf.index)
         self.full_pred.append(pred)
         pred_ci = pred.conf_int()
 
@@ -183,8 +190,8 @@ class ExpSmoothing:
 
         return y_pred
 
-    def plot(self, y, dataset, datatype, filename, full_test_data):
-        full_test_data = self._get_time_index(full_test_data)
+    def plot(self, y, dataset, datatype, filename, full_test_data_):
+        full_test_data = self._get_time_index(full_test_data_)
         ax = full_test_data['value'].plot(label='observed')
 
         for w, fpred in enumerate(self.full_pred):
