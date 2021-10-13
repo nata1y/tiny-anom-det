@@ -42,8 +42,8 @@ from alibi_detect.od import OutlierProphet, OutlierSeq2Seq
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 60
-step = 60
+anomaly_window = 1024
+step = 1024
 data_test = None
 models = {
           # scale, n_clusters = 2
@@ -218,6 +218,10 @@ def fit_base_model(model_params, for_optimization=True):
             if y.tolist():
                 if name in ['sarima']:
                     y_pred = model.predict(window[['timestamp', 'value']])
+                    print(y_pred)
+                    print(y)
+                    print(len(y))
+                    print(len(y_pred))
                 elif name == 'es':
                     y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
                     stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
@@ -372,7 +376,7 @@ if __name__ == '__main__':
             f = os.path.join(train_data_path, filename)
             if os.path.isfile(f):
                 print(f"Training model {name} with data {filename}")
-                data = pd.read_csv(f)[-1000:]
+                data = pd.read_csv(f)[-3000:]
                 if dataset == 'kpi':
                     data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:2000]
 

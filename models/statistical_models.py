@@ -30,7 +30,8 @@ class SARIMA:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
         data.set_index('timestamp', inplace=True)
         if self.dataset in ['kpi']:
-            data = data.asfreq('60S')
+            data = data.asfreq('T')
+            # data.dropna(inplace=True)
         return data
 
     def fit(self, data, dataset):
@@ -79,24 +80,27 @@ class SARIMA:
 
     def predict(self, newdf):
         y_pred = []
+        print(newdf.shape)
         newdf = self._get_time_index(newdf)
+        print(newdf.shape)
 
         # # add new observation
         # print(self.model._get_prediction_index(start, end))
         # refit=True
-        self.model = self.model.append(newdf, index=newdf.index)
+        self.model = self.model.append(newdf)
 
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
-                                         dynamic=False, alpha=0.05, index=newdf.index)
+                                         dynamic=False, alpha=0.05)
         self.full_pred.append(pred)
         pred_ci = pred.conf_int()
 
         for idx, row in pred_ci.iterrows():
-            if adjust_range(row['lower value'], 'div', self.conf) <= newdf.loc[idx, 'value'] \
-                    <= adjust_range(row['upper value'], 'mult', self.conf):
-                y_pred.append(0)
-            else:
-                y_pred.append(1)
+            if str(newdf.loc[idx, 'value']) != 'nan':
+                if adjust_range(row['lower value'], 'div', self.conf) <= newdf.loc[idx, 'value'] \
+                        <= adjust_range(row['upper value'], 'mult', self.conf):
+                    y_pred.append(0)
+                else:
+                    y_pred.append(1)
 
         return y_pred
 
