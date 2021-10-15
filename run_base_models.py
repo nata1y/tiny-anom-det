@@ -61,12 +61,12 @@ models = {
           #             Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
           #                          'nan_euclidean', dtw], name='metric')],
           #            [1, 3, 'euclidean']),
-          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.5]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.2]),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'prophet': (OutlierProphet, [Real(low=0.01, high=5.0, name='threshold'),
           #                              Categorical(['linear', 'logistic'], name='growth')], [0.9, 'linear']),
           # 'sr_alibi': (SR, [Real(low=0.01, high=10.0, name='threshold'),
@@ -218,10 +218,6 @@ def fit_base_model(model_params, for_optimization=True):
             if y.tolist():
                 if name in ['sarima']:
                     y_pred = model.predict(window[['timestamp', 'value']])
-                    print(y_pred)
-                    print(y)
-                    print(len(y))
-                    print(len(y_pred))
                 elif name == 'es':
                     y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
                     stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
@@ -376,9 +372,9 @@ if __name__ == '__main__':
             f = os.path.join(train_data_path, filename)
             if os.path.isfile(f):
                 print(f"Training model {name} with data {filename}")
-                data = pd.read_csv(f)[-3000:]
+                data = pd.read_csv(f)
                 if dataset == 'kpi':
-                    data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:2000]
+                    data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
 
                 fit_base_model(def_params, for_optimization=False)
                 quit()

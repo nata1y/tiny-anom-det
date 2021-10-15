@@ -3,7 +3,7 @@ import funcy
 import torch
 import scipy.stats as st
 from keras.engine.input_layer import InputLayer
-from keras.layers import Conv2D, Conv2DTranspose, Reshape
+from keras.layers import Conv2D, Conv2DTranspose, Reshape, Conv1D, MaxPooling1D, Flatten
 from tensorflow import keras
 from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
@@ -55,6 +55,17 @@ class LSTM_autoencoder:
     loss = []
 
     def __init__(self, X_shape, dataset, datatype, filename, magnitude=1.5, window=60):
+        # self.model = Sequential()
+        # self.model.add(Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_shape[0], X_shape[1])))
+        # self.model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
+        # self.model.add(MaxPooling1D(pool_size=2))
+        # self.model.add(Flatten())
+        # self.model.add(RepeatVector(X_shape[0]))
+        # self.model.add(LSTM(200, activation='relu', return_sequences=True))
+        # self.model.add(TimeDistributed(Dense(100, activation='relu')))
+        # self.model.add(TimeDistributed(Dense(1)))
+        # self.model.compile(loss='mse', optimizer='adam')
+
         self.model = Sequential()
         self.model.add(LSTM(128, input_shape=(X_shape[0], X_shape[1])))
         self.model.add(Dropout(rate=0.2))

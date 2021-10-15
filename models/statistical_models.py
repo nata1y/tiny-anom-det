@@ -31,6 +31,16 @@ class SARIMA:
         data.set_index('timestamp', inplace=True)
         if self.dataset in ['kpi']:
             data = data.asfreq('T')
+            if self.model:
+                dti = pd.DataFrame([])
+                dti.loc[:, 'timestamp'] = pd.date_range(self.model.fittedvalues.index.max() + pd.Timedelta(minutes=1),
+                                                        periods=data.shape[0], freq="T")
+                dti.set_index('timestamp', inplace=True)
+                dti['value'] = None
+                res = pd.concat((data, dti)).sort_values(by='value')
+                res = res[~res.index.duplicated(keep='first')]
+                res = res.sort_index()
+                return res
             # data.dropna(inplace=True)
         return data
 
@@ -80,13 +90,13 @@ class SARIMA:
 
     def predict(self, newdf):
         y_pred = []
-        print(newdf.shape)
+        print(newdf)
         newdf = self._get_time_index(newdf)
-        print(newdf.shape)
 
         # # add new observation
-        # print(self.model._get_prediction_index(start, end))
         # refit=True
+        print(newdf)
+        print('=====================')
         self.model = self.model.append(newdf)
 
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
@@ -95,7 +105,7 @@ class SARIMA:
         pred_ci = pred.conf_int()
 
         for idx, row in pred_ci.iterrows():
-            if str(newdf.loc[idx, 'value']) != 'nan':
+            if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
                 if adjust_range(row['lower value'], 'div', self.conf) <= newdf.loc[idx, 'value'] \
                         <= adjust_range(row['upper value'], 'mult', self.conf):
                     y_pred.append(0)
@@ -120,14 +130,15 @@ class SARIMA:
                             color='k', alpha=.2)
 
             for tm, row in pred_ci.iterrows():
-                if (adjust_range(row['lower value'], 'div', self.conf) > y.loc[tm, 'value'] or
-                    y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf)) and \
-                        full_test_data.loc[tm, 'is_anomaly'] == 0:
-                    ax.scatter(tm, y.loc[tm, 'value'], color='r')
-                if (adjust_range(row['lower value'], 'div', self.conf) <= y.loc[tm, 'value'] <=
-                    adjust_range(row['upper value'], 'mult', self.conf)) \
-                        and full_test_data.loc[tm, 'is_anomaly'] == 1:
-                    ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
+                if tm in y.index:
+                    if (adjust_range(row['lower value'], 'div', self.conf) > y.loc[tm, 'value'] or
+                        y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf)) and \
+                            full_test_data.loc[tm, 'is_anomaly'] == 0:
+                        ax.scatter(tm, y.loc[tm, 'value'], color='r')
+                    if (adjust_range(row['lower value'], 'div', self.conf) <= y.loc[tm, 'value'] <=
+                        adjust_range(row['upper value'], 'mult', self.conf)) \
+                            and full_test_data.loc[tm, 'is_anomaly'] == 1:
+                        ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
 
             idx += 1
 
