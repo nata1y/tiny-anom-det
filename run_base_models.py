@@ -6,6 +6,7 @@ import funcy
 from alibi_detect.utils.data import create_outlier_batch
 from funcy import flatten
 from matplotlib import pyplot
+from pytorch_forecasting import DeepAR
 from sklearn import metrics, preprocessing
 from sklearn.cluster import DBSCAN, KMeans
 from sklearn.covariance import EllipticEnvelope
@@ -61,12 +62,13 @@ models = {
           #             Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
           #                          'nan_euclidean', dtw], name='metric')],
           #            [1, 3, 'euclidean']),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.2]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.05]),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
-          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          # 'deepar': (DeepAR, [], []),
           # 'prophet': (OutlierProphet, [Real(low=0.01, high=5.0, name='threshold'),
           #                              Categorical(['linear', 'logistic'], name='growth')], [0.9, 'linear']),
           # 'sr_alibi': (SR, [Real(low=0.01, high=10.0, name='threshold'),
@@ -79,11 +81,11 @@ models = {
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
           # 'sr-cnn': []
-          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
-          #                           Integer(low=1, high=100, name='sensitivity')],
-          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+                                    Integer(low=1, high=30, name='MAG_WINDOW'),
+                                    Integer(low=5, high=50, name='SCORE_WINDOW'),
+                                    Integer(low=1, high=100, name='sensitivity')],
+                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
           #                      Integer(low=1, high=100, name='samples'),
@@ -124,8 +126,8 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'isolation_forest':
         model = IsolationForest(n_estimators=model_params[0])
     elif name == 'lstm':
-        model = LSTM_autoencoder([anomaly_window, 1],  dataset, type, filename.replace(".csv", ""),
-                                 magnitude=model_params[0], window=anomaly_window)
+        model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename.replace(".csv", ""),
+                                 magnitude=model_params[0], window=anomaly_window, threshold_model_type='sarima')
     elif name == 'seq2seq':
         seqseq_net = SeqSeq(anomaly_window, 2 * model_params[0])
         model = OutlierSeq2Seq(n_features=1, seq_len=anomaly_window, threshold=None,
@@ -144,6 +146,8 @@ def fit_base_model(model_params, for_optimization=True):
         model = OutlierVAE(threshold=model_params[0], encoder_net=vae_net.encoder_net_vae,
                            decoder_net=vae_net.decoder_net_vae, latent_dim=model_params[1], samples=model_params[2])
         percent_anomaly = model_params[3]
+    elif name == 'deepar':
+        model = DeepAR()
 
     if name in ['sarima', 'es']:
 
@@ -156,7 +160,7 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'lstm':
         X, y = create_dataset(data_train[['value']], data_train[['value']], anomaly_window)
         start_time = time.time()
-        model.fit(X, y)
+        model.fit(X, y, data_train['timestamp'], data_train['value'][-anomaly_window:])
         end_time = time.time()
 
         diff = end_time - start_time
@@ -179,6 +183,14 @@ def fit_base_model(model_params, for_optimization=True):
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'sr_alibi':
         model.infer_threshold(data_train[['value']].to_numpy(), threshold_perc=percent_anomaly)
+    elif name == 'deepar':
+        X, y = create_dataset(data_train[['value']], data_train[['value']], anomaly_window)
+        start_time = time.time()
+        model.fit(X)
+        end_time = time.time()
+
+        diff = end_time - start_time
+        print(f"Trained model {name} on {filename} for {diff}")
     else:
         if name not in ['dbscan']:
             try:
@@ -232,7 +244,7 @@ def fit_base_model(model_params, for_optimization=True):
                         y_pred = [0 for _ in range(window.shape[0])]
 
                 elif name == 'lstm':
-                    y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1))
+                    y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1), window['timestamp'])
                 elif name == 'vae':
                     mean_val = np.mean(X.to_numpy().flatten())
                     Xf = funcy.lflatten(X.to_numpy().flatten())
@@ -322,8 +334,7 @@ def fit_base_model(model_params, for_optimization=True):
         if name in ['sarima', 'es']:
             model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test)
         elif name == 'lstm':
-            model.plot(data['timestamp'].tolist())
-
+            model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
         try:
             tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
             specificity = tn / (tn + fp)

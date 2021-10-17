@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from utils import adjust_range
+import plotly.graph_objects as go
 
 
 class SARIMA:
@@ -22,6 +23,7 @@ class SARIMA:
     def __init__(self, conf=1.5):
         self.full_pred = []
         self.conf = conf
+        self.threshold_modelling = False
 
     def _get_time_index(self, data):
         if self.dataset in ['yahoo']:
@@ -95,14 +97,18 @@ class SARIMA:
 
         # # add new observation
         # refit=True
+        print(self.model.fittedvalues)
         print(newdf)
         print('=====================')
         self.model = self.model.append(newdf)
-
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.05)
         self.full_pred.append(pred)
         pred_ci = pred.conf_int()
+
+        # play around with lower value of threshold
+        if self.threshold_modelling:
+            pred_ci['lower value'] = 0.0
 
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
@@ -114,20 +120,83 @@ class SARIMA:
 
         return y_pred
 
-    def plot(self, y, dataset, datatype, filename, full_test_data):
+    def plot_threshold(self, y, dataset, datatype, filename, full_test_data, model):
+        y = y[y['timestamp'] > 1500200000]
+        y = y[y['timestamp'] < 1500300000]
+
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
+        y = y.dropna(subset=['value'])
+        print(y)
+        print('====================================================')
         ax = y['value'].plot(label='observed')
 
         idx = 1
         for _, pred in enumerate(self.full_pred):
             pred_ci = pred.conf_int()
 
-            pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
-            ax.fill_between(pred_ci.index,
-                            pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf)),
-                            pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf)),
-                            color='k', alpha=.2)
+            # play around with lower value of threshold
+            if self.threshold_modelling:
+                pred_ci['lower value'] = 0.0
+
+            print(pred_ci)
+            if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
+
+                pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
+                ax.fill_between(pred_ci.index,
+                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf)),
+                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf)),
+                                color='k', alpha=.2)
+
+            for tm, row in pred_ci.iterrows():
+                if tm in y.index:
+                    if (adjust_range(row['lower value'], 'div', self.conf) > y.loc[tm, 'value'] or
+                        y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf)) and \
+                            full_test_data.loc[tm, 'is_anomaly'] == 0:
+                        ax.scatter(tm, y.loc[tm, 'value'], color='r')
+                    if (adjust_range(row['lower value'], 'div', self.conf) <= y.loc[tm, 'value'] <=
+                        adjust_range(row['upper value'], 'mult', self.conf)) \
+                            and full_test_data.loc[tm, 'is_anomaly'] == 1:
+                        ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
+
+            idx += 1
+
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Values')
+        plt.legend()
+        plt.savefig(f'results/imgs/{dataset}/{datatype}/{model}/{model}_{filename.replace(".csv", "")}_threshold_via_sarima_snippest.png')
+
+        plt.close('all')
+        plt.clf()
+        self.full_pred = []
+        return y
+
+    def plot(self, y, dataset, datatype, filename, full_test_data):
+        y = y[y['timestamp'] > 1500200000]
+        y = y[y['timestamp'] < 1500300000]
+
+        y = self._get_time_index(y)
+        full_test_data = self._get_time_index(full_test_data)
+        y = y.dropna(subset=['value'])
+        print(y)
+        print('====================================================')
+        ax = y['value'].plot(label='observed')
+
+        idx = 1
+        for _, pred in enumerate(self.full_pred):
+            pred_ci = pred.conf_int()
+
+            # play around with lower value of threshold
+            # if self.threshold_modelling:
+            #     pred_ci['lower value'] = 0.0
+
+            print(pred_ci)
+            if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
+                pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
+                ax.fill_between(pred_ci.index,
+                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf)),
+                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf)),
+                                color='k', alpha=.2)
 
             for tm, row in pred_ci.iterrows():
                 if tm in y.index:
