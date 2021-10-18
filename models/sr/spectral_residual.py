@@ -29,11 +29,13 @@ import numpy as np
 
 from msanomalydetector.util import *
 import msanomalydetector.boundary_utils as boundary_helper
+from models.statistical_models import SARIMA
 from msanomalydetector._anomaly_kernel_cython import median_filter
+import plotly.graph_objects as go
 
 
 class SpectralResidual:
-    def __init__(self, series, threshold, mag_window, score_window, sensitivity, detect_mode, batch_size=32):
+    def __init__(self, series, threshold, mag_window, score_window, sensitivity, detect_mode, batch_size=32, dt=False):
         self.__series__ = series
         self.__values__ = self.__series__['value'].tolist()
         # hyperparam tau = thershold?, tau = 3
@@ -52,11 +54,78 @@ class SpectralResidual:
 
         self.__batch_size = max(12, self.__batch_size)
         self.__batch_size = min(len(series), self.__batch_size)
+        self.history = pd.DataFrame([])
+        self.dynamic_threshold = dt
+        self.threshold_model = SARIMA(1.3)
 
-    def detect(self):
+    def fit(self):
         if self.__anomaly_frame is None:
             self.__anomaly_frame = self.__detect()
 
+        result = self.__anomaly_frame
+
+        self.threshold_model.dataset = 'kpi'
+        self.threshold_model.threshold_modelling = True
+
+        result['value'] = result['score']
+        self.threshold_model.fit(result[['timestamp', 'value']], 'kpi')
+        return result
+
+    def detect_dynamic_threshold(self, window):
+        self.__anomaly_frame = self.__detect()
+
+        result = self.__anomaly_frame
+
+        self.threshold_model.threshold_modelling = True
+
+        result['value'] = result['score']
+        self.threshold_model.predict(result[['timestamp', 'value']])
+        self.history = pd.concat([self.history, result])
+        return result
+
+    def plot_dynamic_threshold(self, timestamps, dataset, datatype, filename, data_test):
+        loss_df = pd.DataFrame([])
+        loss_df['value'] = self.history['score'].tolist()
+        loss_df['timestamp'] = timestamps
+        self.threshold_model.plot_threshold(loss_df, dataset, datatype, filename, data_test, 'sr')
+
+    def plot(self, dataset, datatype, filename, datatest):
+        fig = go.Figure()
+
+        datatest.set_index('timestamp', inplace=True)
+        self.history.set_index('timestamp', inplace=True)
+
+        fig.add_trace(go.Scatter(x=self.history.index, y=self.history['mag'].tolist(), name='Residual scores'))
+        fig.add_trace(
+            go.Scatter(x=self.history.index, y=[self.__threshold__ for _ in range(self.history.shape[0])],
+                       name='Threshold'))
+
+        x_fp, y_fp = [], []
+        x_fn, y_fn = [], []
+        for tm, row in self.history.iterrows():
+            if tm in datatest.index:
+                if row['mag'] > self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 0:
+                    x_fp.append(tm)
+                    y_fp.append(row['mag'])
+                if row['mag'] < self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 1:
+                    x_fn.append(tm)
+                    y_fn.append(row['mag'])
+
+        if x_fp:
+            fig.add_trace(go.Scatter(x=x_fp, y=y_fp, name='FP', mode="markers"))
+        if x_fn:
+            fig.add_trace(go.Scatter(x=x_fn, y=y_fn, name='FN', mode="markers"))
+
+        fig.update_layout(showlegend=True, title='Saliency map')
+        fig.write_image(
+            f'results/imgs/{dataset}/{datatype}/sr/sr_{filename.replace(".csv", "")}_saliency_map.png')
+
+        fig.data = []
+
+    def detect(self):
+        self.__anomaly_frame = self.__detect()
+
+        self.history = pd.concat([self.history, self.__anomaly_frame])
         return self.__anomaly_frame
 
     def __detect(self):

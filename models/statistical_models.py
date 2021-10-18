@@ -92,14 +92,14 @@ class SARIMA:
 
     def predict(self, newdf):
         y_pred = []
-        print(newdf)
+        # print(newdf)
         newdf = self._get_time_index(newdf)
 
         # # add new observation
         # refit=True
         print(self.model.fittedvalues)
         print(newdf)
-        print('=====================')
+        print('%%%%')
         self.model = self.model.append(newdf)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.05)
@@ -107,8 +107,8 @@ class SARIMA:
         pred_ci = pred.conf_int()
 
         # play around with lower value of threshold
-        if self.threshold_modelling:
-            pred_ci['lower value'] = 0.0
+        # if self.threshold_modelling:
+        #     pred_ci['lower value'] = 0.0
 
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
@@ -121,6 +121,7 @@ class SARIMA:
         return y_pred
 
     def plot_threshold(self, y, dataset, datatype, filename, full_test_data, model):
+        print(y)
         y = y[y['timestamp'] > 1500200000]
         y = y[y['timestamp'] < 1500300000]
 
@@ -172,12 +173,12 @@ class SARIMA:
         return y
 
     def plot(self, y, dataset, datatype, filename, full_test_data):
-        y = y[y['timestamp'] > 1500200000]
-        y = y[y['timestamp'] < 1500300000]
+        # y = y[y['timestamp'] > 1500200000]
+        # y = y[y['timestamp'] < 1500300000]
 
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
-        y = y.dropna(subset=['value'])
+        # y = y.dropna(subset=['value'])
         print(y)
         print('====================================================')
         ax = y['value'].plot(label='observed')
@@ -187,10 +188,6 @@ class SARIMA:
             pred_ci = pred.conf_int()
 
             # play around with lower value of threshold
-            # if self.threshold_modelling:
-            #     pred_ci['lower value'] = 0.0
-
-            print(pred_ci)
             if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
                 pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
                 ax.fill_between(pred_ci.index,

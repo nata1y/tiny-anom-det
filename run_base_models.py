@@ -62,7 +62,7 @@ models = {
           #             Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
           #                          'nan_euclidean', dtw], name='metric')],
           #            [1, 3, 'euclidean']),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.05]),
+          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.1]),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
@@ -81,11 +81,11 @@ models = {
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
           # 'sr-cnn': []
-          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-                                    Integer(low=1, high=30, name='MAG_WINDOW'),
-                                    Integer(low=5, high=50, name='SCORE_WINDOW'),
-                                    Integer(low=1, high=100, name='sensitivity')],
-                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
+          #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
+          #                           Integer(low=1, high=100, name='sensitivity')],
+          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
           #                      Integer(low=1, high=100, name='samples'),
@@ -138,7 +138,7 @@ def fit_base_model(model_params, for_optimization=True):
         model = OutlierProphet(threshold=model_params[0], growth=model_params[1])
     elif name == 'sr_alibi':
         model = SR(threshold=model_params[0], window_amp=model_params[1], window_local=model_params[2],
-                   n_est_points=model_params[3], n_grad_points=model_params[4])
+                   n_est_points=model_params[3], n_grad_points=model_params[4]) # dont forget dt param!!!!
         percent_anomaly = model_params[5]
 
     elif name == 'vae':
@@ -166,9 +166,12 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'sr':
+        # DT param!!!!!!!!!!
         model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
                                  detect_mode=DetectMode.anomaly_only)
+        if model.dynamic_threshold:
+            model.fit()
         # print(model.detect())
     elif name in ['seq2seq', 'vae']:
         X, y = create_dataset(data_train[['value']], data_train[['value']], anomaly_window)
@@ -235,13 +238,20 @@ def fit_base_model(model_params, for_optimization=True):
                     stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
                     model.fit(stacked_res, dataset)
                 elif name == 'sr':
-                    model = SpectralResidual(series=window[['value', 'timestamp']], threshold=model_params[0],
-                                             mag_window=model_params[1], score_window=model_params[2],
-                                             sensitivity=model_params[3], detect_mode=DetectMode.anomaly_only)
-                    try:
-                        y_pred = [1 if x else 0 for x in model.detect()['isAnomaly'].tolist()]
-                    except:
-                        y_pred = [0 for _ in range(window.shape[0])]
+                    model.__series__ = window[['value', 'timestamp']]
+                    if model.dynamic_threshold:
+                        try:
+                            # update dynamic threshold here
+                            y_pred = [1 if x else 0 for x in model.detect_dynamic_threshold(window[['value', 'timestamp']])['isAnomaly'].tolist()]
+                        except Exception as e:
+                            print(e)
+                            y_pred = [0 for _ in range(window.shape[0])]
+                    else:
+                        try:
+                            y_pred = [1 if x else 0 for x in model.detect()['isAnomaly'].tolist()]
+                        except Exception as e:
+                            print(e)
+                            y_pred = [0 for _ in range(window.shape[0])]
 
                 elif name == 'lstm':
                     y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1), window['timestamp'])
@@ -333,8 +343,12 @@ def fit_base_model(model_params, for_optimization=True):
 
         if name in ['sarima', 'es']:
             model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test)
-        elif name == 'lstm':
+        elif name in ['lstm']:
             model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+        elif name == 'sr':
+            model.plot(dataset, type, filename, data_test)
+            if model.dynamic_threshold:
+                model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
         try:
             tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
             specificity = tn / (tn + fp)
@@ -385,7 +399,7 @@ if __name__ == '__main__':
                 print(f"Training model {name} with data {filename}")
                 data = pd.read_csv(f)
                 if dataset == 'kpi':
-                    data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
+                    data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
 
                 fit_base_model(def_params, for_optimization=False)
                 quit()
