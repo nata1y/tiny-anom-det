@@ -20,10 +20,13 @@ class SARIMA:
     model = None
     dataset = ''
 
-    def __init__(self, conf=1.5):
+    def __init__(self, conf_top=1.5, conf_botton=1.5, train_size=3000):
         self.full_pred = []
-        self.conf = conf
+        self.conf_top = conf_top
+        self.conf_botton = conf_botton
         self.threshold_modelling = False
+        self.train_size = train_size
+        self.latest_train_snippest = pd.DataFrame([])
 
     def _get_time_index(self, data):
         if self.dataset in ['yahoo']:
@@ -47,8 +50,9 @@ class SARIMA:
         return data
 
     def fit(self, data, dataset):
-        self.dataset = dataset
-        data = self._get_time_index(data)
+        if dataset != 'retrain':
+            self.dataset = dataset
+            data = self._get_time_index(data)
         ############################################# Seasaonl decomposing #############################################
         # res = seasonal_decompose(data.interpolate(), model='additive')
         # res.plot()
@@ -89,6 +93,7 @@ class SARIMA:
 
         print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
         self.model = self.model.fit()
+        self.latest_train_snippest = data
 
     def predict(self, newdf):
         y_pred = []
@@ -100,23 +105,34 @@ class SARIMA:
         print(self.model.fittedvalues)
         print(newdf)
         print('%%%%')
-        self.model = self.model.append(newdf)
+        # self.model = self.model.append(newdf)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
-                                         dynamic=False, alpha=0.05)
+                                         dynamic=False, alpha=0.01)
+
         self.full_pred.append(pred)
         pred_ci = pred.conf_int()
+        deanomalized_window = pd.DataFrame([])
 
         # play around with lower value of threshold
         # if self.threshold_modelling:
         #     pred_ci['lower value'] = 0.0
 
         for idx, row in pred_ci.iterrows():
+            value = None
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
-                if adjust_range(row['lower value'], 'div', self.conf) <= newdf.loc[idx, 'value'] \
-                        <= adjust_range(row['upper value'], 'mult', self.conf):
+                if adjust_range(row['lower value'], 'div', self.conf_botton) <= newdf.loc[idx, 'value'] \
+                        <= adjust_range(row['upper value'], 'mult', self.conf_top):
                     y_pred.append(0)
+                    value = newdf.loc[idx, 'value']
                 else:
                     y_pred.append(1)
+            deanomalized_window.loc[idx, 'value'] = value
+
+        self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
+
+        # retrain on anomaly but throw away anomalies from dataset
+        # if y_pred.count(1) > 0:
+        #     self.fit(self.latest_train_snippest, 'retrain')
 
         return y_pred
 
@@ -145,18 +161,18 @@ class SARIMA:
 
                 pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
                 ax.fill_between(pred_ci.index,
-                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf)),
-                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf)),
+                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
+                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
                                 color='k', alpha=.2)
 
             for tm, row in pred_ci.iterrows():
                 if tm in y.index:
-                    if (adjust_range(row['lower value'], 'div', self.conf) > y.loc[tm, 'value'] or
-                        y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf)) and \
+                    if (adjust_range(row['lower value'], 'div', self.conf_botton) > y.loc[tm, 'value'] or
+                        y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf_top)) and \
                             full_test_data.loc[tm, 'is_anomaly'] == 0:
                         ax.scatter(tm, y.loc[tm, 'value'], color='r')
-                    if (adjust_range(row['lower value'], 'div', self.conf) <= y.loc[tm, 'value'] <=
-                        adjust_range(row['upper value'], 'mult', self.conf)) \
+                    if (adjust_range(row['lower value'], 'div', self.conf_botton) <= y.loc[tm, 'value'] <=
+                        adjust_range(row['upper value'], 'mult', self.conf_top)) \
                             and full_test_data.loc[tm, 'is_anomaly'] == 1:
                         ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
 
@@ -178,7 +194,7 @@ class SARIMA:
 
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
-        # y = y.dropna(subset=['value'])
+        y = y.dropna(subset=['value'])
         print(y)
         print('====================================================')
         ax = y['value'].plot(label='observed')
@@ -191,18 +207,18 @@ class SARIMA:
             if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
                 pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
                 ax.fill_between(pred_ci.index,
-                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf)),
-                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf)),
+                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
+                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
                                 color='k', alpha=.2)
 
             for tm, row in pred_ci.iterrows():
                 if tm in y.index:
-                    if (adjust_range(row['lower value'], 'div', self.conf) > y.loc[tm, 'value'] or
-                        y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf)) and \
+                    if (adjust_range(row['lower value'], 'div', self.conf_botton) > y.loc[tm, 'value'] or
+                        y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf_top)) and \
                             full_test_data.loc[tm, 'is_anomaly'] == 0:
                         ax.scatter(tm, y.loc[tm, 'value'], color='r')
-                    if (adjust_range(row['lower value'], 'div', self.conf) <= y.loc[tm, 'value'] <=
-                        adjust_range(row['upper value'], 'mult', self.conf)) \
+                    if (adjust_range(row['lower value'], 'div', self.conf_botton) <= y.loc[tm, 'value'] <=
+                        adjust_range(row['upper value'], 'mult', self.conf_top)) \
                             and full_test_data.loc[tm, 'is_anomaly'] == 1:
                         ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
 
@@ -300,7 +316,7 @@ class ExpSmoothing:
         ax.set_xlabel('Date')
         ax.set_ylabel('Values')
         plt.legend()
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/es/es_{filename.replace(".csv", "")}_full.png')
+        plt.savefig(f'results/imgs/{dataset}/{datatype}/es/es_{filename.replace(".csv", "")}_train.png')
 
         plt.close('all')
         plt.clf()

@@ -34,7 +34,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support
 
-from utils import create_dataset
+from utils import create_dataset, plot_dbscan
 from tslearn.metrics import dtw
 from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, DetectMode, SpectralResidual
 from alibi_detect.od import SpectralResidual as SR, OutlierVAE
@@ -43,28 +43,27 @@ from alibi_detect.od import OutlierProphet, OutlierSeq2Seq
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 1024
-step = 1024
+anomaly_window = 60
+step = 60
 data_test = None
 models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, [], []),
           # don't scale novelty=True
-          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=20, name='n_neighbors')], [5]),
+          'dbscan': (DBSCAN,
+                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+                     Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+                                 'nan_euclidean', dtw], name='metric')],
+                     [1, 2, dtw]),
+          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors')], [5]),
           # scale gamma='scale'
           # 'ocsvm': (OneClassSVM,
           #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')],
           #           [0.85, 'poly']),
-          # 'dbscan': DBSCAN(eps=1, min_samples=3),
-          # egads hyperparams, no normalization
-          # 'dbscan': (DBSCAN,
-          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=10, name='min_samples'),
-          #             Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-          #                          'nan_euclidean', dtw], name='metric')],
-          #            [1, 3, 'euclidean']),
-          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf")], [1.1]),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+          #            [1.1, 1.0]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
           # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
@@ -105,7 +104,9 @@ def fit_base_model(model_params, for_optimization=True):
     model = None
 
     # standardize
-    if name not in ['sarima', 'lof', 'isolation_forest', 'es']:
+    # TODO: rerun with standartization for LOF, IF
+    # 'lof', 'isolation_forest',
+    if name not in ['sarima', 'es']:
         scaler = preprocessing.StandardScaler().fit(data_train[['value']])
         data_train['value'] = scaler.transform(data_train[['value']])
         data_test['value'] = scaler.transform(data_test[['value']])
@@ -120,14 +121,14 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'dbscan':
         model = DBSCAN(eps=model_params[0], min_samples=model_params[1], metric=model_params[2])
     elif name == 'sarima':
-        model = SARIMA(model_params[0])
+        model = SARIMA(model_params[0], model_params[1])
     elif name == 'es':
         model = ExpSmoothing(model_params[0])
     elif name == 'isolation_forest':
         model = IsolationForest(n_estimators=model_params[0])
     elif name == 'lstm':
         model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename.replace(".csv", ""),
-                                 magnitude=model_params[0], window=anomaly_window, threshold_model_type='sarima')
+                                 magnitude=model_params[0], window=anomaly_window)
     elif name == 'seq2seq':
         seqseq_net = SeqSeq(anomaly_window, 2 * model_params[0])
         model = OutlierSeq2Seq(n_features=1, seq_len=anomaly_window, threshold=None,
@@ -197,12 +198,12 @@ def fit_base_model(model_params, for_optimization=True):
     else:
         if name not in ['dbscan']:
             try:
-                X, y = data_test[['value']], data_test['is_anomaly']
+                X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
                 model.fit(X)
                 end_time = time.time()
             except:
-                X, y = data_test[['value']], data_test['is_anomaly']
+                X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
                 model.fit(X[-25000:])
                 end_time = time.time()
@@ -219,7 +220,7 @@ def fit_base_model(model_params, for_optimization=True):
             #     diff = end_time - start_time
             #     print(f"Trained model {name} on {filename} for {diff}")
 
-    precision, recall, f1 = [], [], []
+    all_labels = []
     y_pred_total = []
     idx = 0
     stacked_res = data_train[['timestamp', 'value']]
@@ -285,9 +286,9 @@ def fit_base_model(model_params, for_optimization=True):
                     y_pred = model.predict(Xf, outlier_type='feature')
                     y_pred = [x[0] for x in y_pred['data']['is_outlier'][:len(y)]]
                 elif name == 'dbscan':
-                    y_pred = model.fit_predict(window[['value']])
+                    y_pred = model.fit_predict(window[['value', 'timestamp']])
                 else:
-                    y_pred = model.predict(window[['value']])
+                    y_pred = model.predict(window[['value', 'timestamp']])
 
                 try:
                     y_pred = le.transform(y_pred).tolist()
@@ -296,7 +297,9 @@ def fit_base_model(model_params, for_optimization=True):
 
                 idx += 1
                 if anomaly_window == step:
+                    # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
                     y_pred_total += [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)[:window.shape[0]]]
+                    all_labels += [(copy.deepcopy(model.labels_), copy.deepcopy(model.core_sample_indices_))]
                 else:
                     if y_pred_total:
                         if len(y_pred) == anomaly_window:
@@ -349,6 +352,9 @@ def fit_base_model(model_params, for_optimization=True):
             model.plot(dataset, type, filename, data_test)
             if model.dynamic_threshold:
                 model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+        elif name == 'dbscan':
+            plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
+
         try:
             tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
             specificity = tn / (tn + fp)
@@ -390,7 +396,7 @@ def monitor(res):
 
 
 if __name__ == '__main__':
-    dataset, type = 'kpi', 'train'
+    dataset, type = 'yahoo', 'real' #'kpi', 'train'
     for name, (model, bo_space, def_params) in models.items():
         train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
         for filename in os.listdir(train_data_path):
@@ -404,16 +410,16 @@ if __name__ == '__main__':
                 fit_base_model(def_params, for_optimization=False)
                 quit()
 
-                # if name not in ['knn']:
-                # ################ Bayesian optimization ###################################################
-                #     bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=20, random_state=13,
-                #                             verbose=False, x0=def_params)
-                #
-                #     print(f"Found hyper parameters for {name}: {bo_result.x}")
-                #
-                #     fit_base_model(bo_result.x, for_optimization=False)
-                # else:
-                #     fit_base_model(def_params, for_optimization=False)
+                if name not in ['knn']:
+                ################ Bayesian optimization ###################################################
+                    bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=20, random_state=13,
+                                            verbose=False, x0=def_params)
+
+                    print(f"Found hyper parameters for {name}: {bo_result.x}")
+
+                    fit_base_model(bo_result.x, for_optimization=False)
+                else:
+                    fit_base_model(def_params, for_optimization=False)
 
         analyse_series_properties(dataset, type, name)
         # try:
