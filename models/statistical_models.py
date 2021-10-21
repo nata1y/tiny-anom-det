@@ -105,7 +105,7 @@ class SARIMA:
         print(self.model.fittedvalues)
         print(newdf)
         print('%%%%')
-        # self.model = self.model.append(newdf)
+        self.model = self.model.append(newdf)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
@@ -131,8 +131,8 @@ class SARIMA:
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
 
         # retrain on anomaly but throw away anomalies from dataset
-        # if y_pred.count(1) > 0:
-        #     self.fit(self.latest_train_snippest, 'retrain')
+        if y_pred.count(1) > 0:
+            self.fit(self.latest_train_snippest, 'retrain')
 
         return y_pred
 

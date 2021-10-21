@@ -54,9 +54,7 @@ def preprocess_kpi(cwd):
 def plot_dbscan(preds, dataset, type, filename, data_test, window_sz):
     data_test.reset_index(inplace=True)
     for (label, core_sample_indice), start in zip(preds, range(0, data_test.shape[0], window_sz)):
-        print(start)
         window = data_test.iloc[start:start + window_sz][['value', 'timestamp']]
-        print(window)
 
         core_samples_mask = np.zeros_like(label, dtype=bool)
         core_samples_mask[core_sample_indice] = True
@@ -72,13 +70,14 @@ def plot_dbscan(preds, dataset, type, filename, data_test, window_sz):
             class_member_mask = (label == k)
 
             xy = window[class_member_mask & core_samples_mask]
-            print(xy)
             plt.plot(xy['timestamp'].tolist(), xy['value'].tolist(), 'o', markerfacecolor=tuple(col),
-                     markeredgecolor='k', markersize=14)
+                     markeredgecolor='k', markersize=5)
 
             xy = window[class_member_mask & ~core_samples_mask]
             plt.plot(xy['timestamp'].tolist(), xy['value'].tolist(), 'o', markerfacecolor=tuple(col),
                      markeredgecolor='k', markersize=1)
+
+        plt.axvline(x=np.max(window['timestamp'].tolist()))
 
     plt.savefig(
         f'results/imgs/{dataset}/{type}/dbscan/dbscan_{filename.replace(".csv", "")}_groups.png')

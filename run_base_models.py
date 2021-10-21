@@ -1,6 +1,7 @@
 import copy
 import os
 import time
+from collections import Counter
 
 import funcy
 from alibi_detect.utils.data import create_outlier_batch
@@ -18,6 +19,7 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.neighbors import NearestNeighbors, LocalOutlierFactor, KNeighborsClassifier
 from sklearn.svm import OneClassSVM
 from skopt import gp_minimize
+from skopt.callbacks import EarlyStopper
 from skopt.space import Integer, Categorical, Real
 from statsmodels.tsa._stl import STL
 from statsmodels.tsa.seasonal import seasonal_decompose
@@ -39,6 +41,7 @@ from tslearn.metrics import dtw
 from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, DetectMode, SpectralResidual
 from alibi_detect.od import SpectralResidual as SR, OutlierVAE
 from alibi_detect.od import OutlierProphet, OutlierSeq2Seq
+from pycaret.anomaly import *
 
 
 root_path = os.getcwd()
@@ -55,14 +58,17 @@ models = {
                      Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
                                  'nan_euclidean', dtw], name='metric')],
                      [1, 2, dtw]),
-          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors')], [5]),
+          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
+          #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
+          'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
           # scale gamma='scale'
           # 'ocsvm': (OneClassSVM,
           #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')],
           #           [0.85, 'poly']),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+          'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0,  name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
           #            [1.1, 1.0]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
@@ -94,19 +100,26 @@ models = {
 
 
 def fit_base_model(model_params, for_optimization=True):
-    global data_test
     percent_anomaly = 0.95
     # 50% train-test split
     if dataset == 'kpi':
         data_train = data
+        if not for_optimization:
+            global data_test
     else:
         data_train, data_test = np.array_split(data, 2)
     model = None
 
+    if for_optimization:
+        data_test = copy.deepcopy(data_train)
+
+    if for_optimization:
+        data_in_memory = pd.DataFrame([])
+    else:
+        data_in_memory = copy.deepcopy(data_train)
+
     # standardize
-    # TODO: rerun with standartization for LOF, IF
-    # 'lof', 'isolation_forest',
-    if name not in ['sarima', 'es']:
+    if name not in ['sarima', 'es', 'isolation_forest', 'lof']:
         scaler = preprocessing.StandardScaler().fit(data_train[['value']])
         data_train['value'] = scaler.transform(data_train[['value']])
         data_test['value'] = scaler.transform(data_test[['value']])
@@ -114,8 +127,8 @@ def fit_base_model(model_params, for_optimization=True):
     # create models with hyper-parameters
     if name == 'knn':
         model = KMeans(n_clusters=2)
-    elif name == 'lof':
-        model = LocalOutlierFactor(novelty=True, n_neighbors=model_params[0])
+    # elif name == 'lof':
+    #     model = LocalOutlierFactor(n_neighbors=model_params[0], contamination=model_params[1])
     elif name == 'ocsvm':
         model = OneClassSVM(gamma='scale', nu=model_params[0], kernel=model_params[1])
     elif name == 'dbscan':
@@ -196,7 +209,7 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     else:
-        if name not in ['dbscan']:
+        if name not in ['dbscan', 'isolation_forest', 'lof']:
             try:
                 X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
@@ -226,10 +239,12 @@ def fit_base_model(model_params, for_optimization=True):
     stacked_res = data_train[['timestamp', 'value']]
 
     pred_time = []
+
     for start in range(0, data_test.shape[0], step):
         try:
             start_time = time.time()
             window = data_test.iloc[start:start + anomaly_window]
+            data_in_memory = pd.concat([data_in_memory, window])[-3000:]
             X, y = window['value'], window['is_anomaly']
             if y.tolist():
                 if name in ['sarima']:
@@ -285,8 +300,23 @@ def fit_base_model(model_params, for_optimization=True):
                     Xf = np.array(Xf).reshape(anomaly_window, 1)
                     y_pred = model.predict(Xf, outlier_type='feature')
                     y_pred = [x[0] for x in y_pred['data']['is_outlier'][:len(y)]]
-                elif name == 'dbscan':
-                    y_pred = model.fit_predict(window[['value', 'timestamp']])
+                elif name in ['lof']:
+                    window = data_in_memory[['value', 'timestamp']].set_index('timestamp')
+                    s = setup(data_train, session_id=13, silent=True)
+                    lof = create_model('lof', fraction=model_params[0])
+                    lof = assign_model(lof)
+                    y_pred = lof['Anomaly'].tolist()[-len(y):]
+                elif name in ['dbscan']:
+                    window_ = copy.deepcopy(data_in_memory[['value']])
+                    y_pred = model.fit_predict(window_)[-len(y):]
+                    core_smpls = np.array([i - window.index.min() for i in model.core_sample_indices_
+                                                if window.index.min() <= i <= window.index.max()])
+                elif name == 'isolation_forest':
+                    window = data_in_memory[['value', 'timestamp']].set_index('timestamp')
+                    s = setup(window, session_id=13, silent=True)
+                    iforest = create_model('iforest', fraction=model_params[0])
+                    iforest_results = assign_model(iforest)
+                    y_pred = iforest_results['Anomaly'].tolist()[-len(y):]
                 else:
                     y_pred = model.predict(window[['value', 'timestamp']])
 
@@ -298,8 +328,10 @@ def fit_base_model(model_params, for_optimization=True):
                 idx += 1
                 if anomaly_window == step:
                     # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
-                    y_pred_total += [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)[:window.shape[0]]]
-                    all_labels += [(copy.deepcopy(model.labels_), copy.deepcopy(model.core_sample_indices_))]
+                    common = Counter(funcy.lflatten(y_pred)[:window.shape[0]]).most_common(1)[0][0]
+                    y_pred_total += [0 if val == common else 1 for val in funcy.lflatten(y_pred)[:window.shape[0]]]
+                    if name == 'dbscan':
+                        all_labels += [(copy.deepcopy(model.labels_[-len(y):]), core_smpls)]
                 else:
                     if y_pred_total:
                         if len(y_pred) == anomaly_window:
@@ -390,9 +422,12 @@ def fit_base_model(model_params, for_optimization=True):
     return 1.0 - met_total[2]
 
 
-def monitor(res):
-    print('run_score: %s' % str(res.func_vals[-1]))
-    print('run_parameters: %s' % str(res.x_iters[-1]))
+class Stopper(EarlyStopper):
+    def __call__(self, result):
+        ret = False
+        if result.func_vals[-1] == 1.0:
+            ret = True
+        return ret
 
 
 if __name__ == '__main__':
@@ -407,12 +442,12 @@ if __name__ == '__main__':
                 if dataset == 'kpi':
                     data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
 
-                fit_base_model(def_params, for_optimization=False)
-                quit()
+                # fit_base_model(def_params, for_optimization=False)
+                # quit()
 
                 if name not in ['knn']:
                 ################ Bayesian optimization ###################################################
-                    bo_result = gp_minimize(fit_base_model, bo_space, callback=[monitor], n_calls=20, random_state=13,
+                    bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11, random_state=13,
                                             verbose=False, x0=def_params)
 
                     print(f"Found hyper parameters for {name}: {bo_result.x}")
