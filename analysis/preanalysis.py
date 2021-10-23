@@ -51,5 +51,10 @@ def series_analysis(data):
     # chaos of a system
     lyapunov_e = nolds.lyap_r(values)
 
+    if lyapunov_e > 0.0:
+        lyapunov_e = 1.0
+    elif lyapunov_e < 0.0:
+        lyapunov_e = -1.0
+
     return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov_e
 

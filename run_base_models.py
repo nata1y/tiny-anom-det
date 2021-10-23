@@ -53,23 +53,21 @@ models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, [], []),
           # don't scale novelty=True
-          'dbscan': (DBSCAN,
-                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-                     Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-                                 'nan_euclidean', dtw], name='metric')],
-                     [1, 2, dtw]),
+          # 'dbscan': (DBSCAN,
+          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+          #            Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+          #                        'nan_euclidean', dtw], name='metric')],
+          #            [1, 2, dtw]),
           # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
           #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
-          'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
+          # 'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
           # scale gamma='scale'
           # 'ocsvm': (OneClassSVM,
           #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')],
           #           [0.85, 'poly']),
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
-          'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0,  name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-          #            [1.1, 1.0]),
+          # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
           # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
@@ -86,11 +84,13 @@ models = {
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
           # 'sr-cnn': []
-          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
-          #                           Integer(low=1, high=100, name='sensitivity')],
-          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+                                    Integer(low=1, high=30, name='MAG_WINDOW'),
+                                    Integer(low=5, high=50, name='SCORE_WINDOW'),
+                                    Integer(low=1, high=100, name='sensitivity')],
+                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+          #           [1.15, 1.15]),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
           #                      Integer(low=1, high=100, name='samples'),
@@ -248,13 +248,16 @@ def fit_base_model(model_params, for_optimization=True):
             X, y = window['value'], window['is_anomaly']
             if y.tolist():
                 if name in ['sarima']:
-                    y_pred = model.predict(window[['timestamp', 'value']])
+                    if for_optimization:
+                        y_pred = model.predict(window[['timestamp', 'value']])
+                    else:
+                        y_pred = model.predict(window[['timestamp', 'value']])
                 elif name == 'es':
                     y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
                     stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
                     model.fit(stacked_res, dataset)
                 elif name == 'sr':
-                    model.__series__ = window[['value', 'timestamp']]
+                    model.__series__ = data_in_memory[['value', 'timestamp']]
                     if model.dynamic_threshold:
                         try:
                             # update dynamic threshold here
@@ -264,7 +267,7 @@ def fit_base_model(model_params, for_optimization=True):
                             y_pred = [0 for _ in range(window.shape[0])]
                     else:
                         try:
-                            y_pred = [1 if x else 0 for x in model.detect()['isAnomaly'].tolist()]
+                            y_pred = [1 if x else 0 for x in model.detect(anomaly_window)['isAnomaly'].tolist()[-len(y):]]
                         except Exception as e:
                             print(e)
                             y_pred = [0 for _ in range(window.shape[0])]
@@ -382,8 +385,8 @@ def fit_base_model(model_params, for_optimization=True):
             model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test)
-            if model.dynamic_threshold:
-                model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+            # if model.dynamic_threshold:
+            #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
         elif name == 'dbscan':
             plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
 
@@ -397,8 +400,8 @@ def fit_base_model(model_params, for_optimization=True):
         stats = stats.append({
             'model': name,
             'dataset': filename.replace('.csv', ''),
-            'trend': trend,
-            'seasonality': seasonality,
+            'trend': np.mean(data['trend'].tolist()) if 'trend' in data.columns else trend,
+            'seasonality': np.mean(data['seasonality1'].tolist()) if 'seasonality1' in data.columns else seasonality,
             'autocorrelation': autocrr,
             'non-linearity': non_lin,
             'skewness': skewness,
@@ -431,53 +434,55 @@ class Stopper(EarlyStopper):
 
 
 if __name__ == '__main__':
-    dataset, type = 'yahoo', 'real' #'kpi', 'train'
-    for name, (model, bo_space, def_params) in models.items():
-        train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
-        for filename in os.listdir(train_data_path):
-            f = os.path.join(train_data_path, filename)
-            if os.path.isfile(f):
-                print(f"Training model {name} with data {filename}")
-                data = pd.read_csv(f)
-                if dataset == 'kpi':
-                    data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
+    dataset, type = 'yahoo', 'A4Benchmark' #'kpi', 'train'
+    for dataset, type in [('kpi', 'train')]: #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
+        for name, (model, bo_space, def_params) in models.items():
+            train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
+            for filename in os.listdir(train_data_path):
+                f = os.path.join(train_data_path, filename)
+                if os.path.isfile(f):
+                    print(f"Training model {name} with data {filename}")
+                    data = pd.read_csv(f)
+                    data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+                    if dataset == 'kpi':
+                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
 
-                # fit_base_model(def_params, for_optimization=False)
-                # quit()
+                    # fit_base_model(def_params, for_optimization=False)
+                    # quit()
 
-                if name not in ['knn']:
-                ################ Bayesian optimization ###################################################
-                    bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11, random_state=13,
-                                            verbose=False, x0=def_params)
+                    if name not in ['knn', 'sarima']:
+                    ################ Bayesian optimization ###################################################
+                        bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11, random_state=13,
+                                                verbose=False, x0=def_params)
 
-                    print(f"Found hyper parameters for {name}: {bo_result.x}")
+                        print(f"Found hyper parameters for {name}: {bo_result.x}")
 
-                    fit_base_model(bo_result.x, for_optimization=False)
-                else:
-                    fit_base_model(def_params, for_optimization=False)
+                        fit_base_model(bo_result.x, for_optimization=False)
+                    else:
+                        fit_base_model(def_params, for_optimization=False)
 
-        analyse_series_properties(dataset, type, name)
-        # try:
-        #     stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
-        #     stats = stats.append({
-        #         'model': name,
-        #         'dataset': 'all-' + type,
-        #         'trend': np.mean(stats['trend'].tolist()),
-        #         'seasonality': np.mean(stats['seasonality'].tolist()),
-        #         'autocorrelation': np.mean(stats['autocorrelation'].tolist()),
-        #         'non-linearity': np.mean(stats['non-linearity'].tolist()),
-        #         'skewness': np.mean(stats['skewness'].tolist()),
-        #         'kurtosis': np.mean(stats['kurtosis'].tolist()),
-        #         'hurst': np.mean(stats['hurst'].tolist()),
-        #         'mean_lyapunov_e': np.mean(stats['max_lyapunov_e'].tolist()),
-        #         'mean_f1': np.mean(stats['f1'].tolist()),
-        #         'min_f1': np.min(stats['min_f1'].tolist()),
-        #         'mean_precision': np.mean(stats['mean_precision'].tolist()),
-        #         'min_precision': np.min(stats['min_precision'].tolist()),
-        #         'mean_recall': np.mean(stats['mean_recall'].tolist()),
-        #         'min_recall': np.min(stats['min_recall'].tolist()),
-        #         'prediction_time': np.mean(stats['prediction_time'].tolist())
-        #     }, ignore_index=True)
-        #     stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
-        # except Exception as e:
-        #     print(e)
+            analyse_series_properties(dataset, type, name)
+            # try:
+            #     stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+            #     stats = stats.append({
+            #         'model': name,
+            #         'dataset': 'all-' + type,
+            #         'trend': np.mean(stats['trend'].tolist()),
+            #         'seasonality': np.mean(stats['seasonality'].tolist()),
+            #         'autocorrelation': np.mean(stats['autocorrelation'].tolist()),
+            #         'non-linearity': np.mean(stats['non-linearity'].tolist()),
+            #         'skewness': np.mean(stats['skewness'].tolist()),
+            #         'kurtosis': np.mean(stats['kurtosis'].tolist()),
+            #         'hurst': np.mean(stats['hurst'].tolist()),
+            #         'mean_lyapunov_e': np.mean(stats['max_lyapunov_e'].tolist()),
+            #         'mean_f1': np.mean(stats['f1'].tolist()),
+            #         'min_f1': np.min(stats['min_f1'].tolist()),
+            #         'mean_precision': np.mean(stats['mean_precision'].tolist()),
+            #         'min_precision': np.min(stats['min_precision'].tolist()),
+            #         'mean_recall': np.mean(stats['mean_recall'].tolist()),
+            #         'min_recall': np.min(stats['min_recall'].tolist()),
+            #         'prediction_time': np.mean(stats['prediction_time'].tolist())
+            #     }, ignore_index=True)
+            #     stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
+            # except Exception as e:
+            #     print(e)
