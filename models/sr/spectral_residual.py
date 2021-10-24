@@ -71,7 +71,7 @@ class SpectralResidual:
         self.threshold_model.fit(result[['timestamp', 'value']], 'kpi')
         return result
 
-    def detect_dynamic_threshold(self, window):
+    def detect_dynamic_threshold(self, window_step):
         self.__anomaly_frame = self.__detect()
 
         result = self.__anomaly_frame
@@ -80,7 +80,7 @@ class SpectralResidual:
 
         result['value'] = result['score']
         self.threshold_model.predict(result[['timestamp', 'value']])
-        self.history = pd.concat([self.history, result])
+        self.history = pd.concat([self.history, self.__anomaly_frame[-window_step:]])
         return result
 
     def plot_dynamic_threshold(self, timestamps, dataset, datatype, filename, data_test):
@@ -93,9 +93,12 @@ class SpectralResidual:
         fig = go.Figure()
 
         datatest.set_index('timestamp', inplace=True)
+        self.history = self.history[self.history['timestamp'] > 1500200000]
+        self.history = self.history[self.history['timestamp'] < 1500300000]
+
         self.history.set_index('timestamp', inplace=True)
 
-        fig.add_trace(go.Scatter(x=self.history.index, y=self.history['mag'].tolist(), name='Residual scores'))
+        fig.add_trace(go.Scatter(x=self.history.index, y=self.history['score'].tolist(), name='Residual scores'))
         fig.add_trace(
             go.Scatter(x=self.history.index, y=[self.__threshold__ for _ in range(self.history.shape[0])],
                        name='Threshold'))
@@ -104,12 +107,12 @@ class SpectralResidual:
         x_fn, y_fn = [], []
         for tm, row in self.history.iterrows():
             if tm in datatest.index:
-                if row['mag'] > self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 0:
+                if row['score'] > self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 0:
                     x_fp.append(tm)
-                    y_fp.append(row['mag'])
-                if row['mag'] < self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 1:
+                    y_fp.append(row['score'])
+                if row['score'] < self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 1:
                     x_fn.append(tm)
-                    y_fn.append(row['mag'])
+                    y_fn.append(row['score'])
 
         if x_fp:
             fig.add_trace(go.Scatter(x=x_fp, y=y_fp, name='FP', mode="markers"))
@@ -122,10 +125,11 @@ class SpectralResidual:
 
         fig.data = []
 
-    def detect(self):
+    def detect(self, window_step):
         self.__anomaly_frame = self.__detect()
 
-        self.history = pd.concat([self.history, self.__anomaly_frame])
+        self.history = pd.concat([self.history, self.__anomaly_frame[-window_step:]])
+
         return self.__anomaly_frame
 
     def __detect(self):

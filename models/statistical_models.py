@@ -2,8 +2,11 @@
 import copy
 import itertools
 import math
+from collections import Counter
 
+import funcy
 import numpy as np
+from sklearn.cluster import DBSCAN
 from sklearn.metrics import mean_squared_log_error
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -11,6 +14,7 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import pandas as pd
 import matplotlib.pyplot as plt
+from tslearn.metrics import dtw
 
 from utils import adjust_range
 import plotly.graph_objects as go
@@ -95,16 +99,20 @@ class SARIMA:
         self.model = self.model.fit()
         self.latest_train_snippest = data
 
-    def predict(self, newdf):
+    def predict(self, newdf, retrain=False):
         y_pred = []
         # print(newdf)
         newdf = self._get_time_index(newdf)
+        # newdf_ = newdf.dropna(subset=['value'])
 
         # # add new observation
         # refit=True
         print(self.model.fittedvalues)
         print(newdf)
         print('%%%%')
+        ################################################################################################################
+        # old_model = copy.deepcopy(self.model)
+        ################################################################################################################
         self.model = self.model.append(newdf)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
@@ -116,6 +124,8 @@ class SARIMA:
         # play around with lower value of threshold
         # if self.threshold_modelling:
         #     pred_ci['lower value'] = 0.0
+        has_anomalies = False
+        anomaly_idxs = []
 
         for idx, row in pred_ci.iterrows():
             value = None
@@ -125,14 +135,32 @@ class SARIMA:
                     y_pred.append(0)
                     value = newdf.loc[idx, 'value']
                 else:
+                    has_anomalies = True
+                    anomaly_idxs.append(idx)
                     y_pred.append(1)
             deanomalized_window.loc[idx, 'value'] = value
 
-        self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
+        ################################################################################################################
+        # if has_anomalies or True:
+        #     model = DBSCAN(eps=abs(np.max(pred_ci['upper value']) - np.min(pred_ci['lower value'])),
+        #                    min_samples=1, metric=dtw)
+        #     y_pred = model.fit_predict(newdf_)
+        #     common = Counter(funcy.lflatten(y_pred)).most_common(1)[0][0]
+        #     for pred, (idx, row) in zip(y_pred, newdf.iterrows()):
+        #         if idx not in newdf_.index or pred != common:
+        #             deanomalized_window.loc[idx, 'value'] = None
+        #         else:
+        #             deanomalized_window.loc[idx, 'value'] = row['value']
+        ################################################################################################################
+
+        self.model = old_model.append(deanomalized_window)
 
         # retrain on anomaly but throw away anomalies from dataset
-        if y_pred.count(1) > 0:
-            self.fit(self.latest_train_snippest, 'retrain')
+        self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
+
+        if retrain:
+            if y_pred.count(1) > 0:
+                self.fit(self.latest_train_snippest, 'retrain')
 
         return y_pred
 
@@ -189,8 +217,8 @@ class SARIMA:
         return y
 
     def plot(self, y, dataset, datatype, filename, full_test_data):
-        # y = y[y['timestamp'] > 1500200000]
-        # y = y[y['timestamp'] < 1500300000]
+        y = y[y['timestamp'] > 1500200000]
+        y = y[y['timestamp'] < 1500300000]
 
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
@@ -299,13 +327,14 @@ class ExpSmoothing:
             fpred['pred'].plot(label=f'Window {w} forecast', alpha=.7, figsize=(14, 7))
             for idx, pred in fpred.iterrows():
                 try:
-                    if (pred['lower value'] > full_test_data.loc[idx, 'value'] or
-                        full_test_data.loc[idx, 'value'] > pred['upper value']) and \
-                            full_test_data.loc[idx, 'is_anomaly'] == 0:
-                        ax.scatter(idx, full_test_data.loc[idx, 'value'], color='r')
-                    if (pred['lower value'] <= full_test_data.loc[idx, 'value'] <= pred['upper value']) \
-                            and full_test_data.loc[idx, 'is_anomaly'] == 1:
-                        ax.scatter(idx, full_test_data.loc[idx, 'value'], color='darkmagenta')
+                    if idx in full_test_data.index:
+                        if (pred['lower value'] > full_test_data.loc[idx, 'value'] or
+                            full_test_data.loc[idx, 'value'] > pred['upper value']) and \
+                                full_test_data.loc[idx, 'is_anomaly'] == 0:
+                            ax.scatter(idx, full_test_data.loc[idx, 'value'], color='r')
+                        if (pred['lower value'] <= full_test_data.loc[idx, 'value'] <= pred['upper value']) \
+                                and full_test_data.loc[idx, 'is_anomaly'] == 1:
+                            ax.scatter(idx, full_test_data.loc[idx, 'value'], color='darkmagenta')
                 except Exception as e:
                     print('==========================================================')
                     print(self.full_pred)

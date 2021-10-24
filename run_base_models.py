@@ -46,8 +46,8 @@ from pycaret.anomaly import *
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 60
-step = 60
+anomaly_window = 1024
+step = 1024
 data_test = None
 models = {
           # scale, n_clusters = 2
@@ -68,7 +68,7 @@ models = {
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
-          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
+          'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
           # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'deepar': (DeepAR, [], []),
@@ -89,8 +89,8 @@ models = {
                                     Integer(low=5, high=50, name='SCORE_WINDOW'),
                                     Integer(low=1, high=100, name='sensitivity')],
                  [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-          #           [1.15, 1.15]),
+          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+                    [1.15, 1.15]),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
           #                      Integer(low=1, high=100, name='samples'),
@@ -442,13 +442,13 @@ if __name__ == '__main__':
                 f = os.path.join(train_data_path, filename)
                 if os.path.isfile(f):
                     print(f"Training model {name} with data {filename}")
-                    data = pd.read_csv(f)
+                    data = pd.read_csv(f)[-3000:]
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
                     if dataset == 'kpi':
                         data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
 
-                    # fit_base_model(def_params, for_optimization=False)
-                    # quit()
+                    fit_base_model(def_params, for_optimization=False)
+                    quit()
 
                     if name not in ['knn', 'sarima']:
                     ################ Bayesian optimization ###################################################

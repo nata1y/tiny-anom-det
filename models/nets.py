@@ -177,8 +177,11 @@ class LSTM_autoencoder:
         loss_df = pd.DataFrame([])
         loss_df['value'] = self.loss
         loss_df['timestamp'] = timestamps
-        arranged_loss = self.threshold_model.plot_threshold(loss_df, dataset, datatype, filename, data_test, 'lstm')
-        arranged_loss = arranged_loss.dropna(subset=['value'])
+        try:
+            arranged_loss = self.threshold_model.plot_threshold(loss_df, dataset, datatype, filename, data_test, 'lstm')
+            arranged_loss = arranged_loss.dropna(subset=['value'])
+        except:
+            arranged_loss = loss_df
 
         fig = go.Figure()
 
