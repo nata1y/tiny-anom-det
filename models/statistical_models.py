@@ -153,7 +153,7 @@ class SARIMA:
         #             deanomalized_window.loc[idx, 'value'] = row['value']
         ################################################################################################################
 
-        self.model = old_model.append(deanomalized_window)
+        # self.model = old_model.append(deanomalized_window)
 
         # retrain on anomaly but throw away anomalies from dataset
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
@@ -215,6 +215,13 @@ class SARIMA:
         plt.clf()
         self.full_pred = []
         return y
+
+    def get_pred_mean(self):
+        pred_thr = pd.DataFrame([])
+        for _, pred in enumerate(self.full_pred):
+            pred_thr = pd.concat([pred_thr, pred.conf_int()])
+
+        return pred_thr[['lower value', 'upper value']]
 
     def plot(self, y, dataset, datatype, filename, full_test_data):
         y = y[y['timestamp'] > 1500200000]

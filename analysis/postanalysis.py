@@ -47,3 +47,28 @@ def is_whitenoise(serie):
     autocorrelation_plot(serie)
     pyplot.show()
     pyplot.clf()
+
+
+def weighted_f_score(true_val, pred_val, model_val, ts_val):
+    # f = TP / (TP + 0.5(FP + FN))
+    fp, fn = 0.0, 0.0
+    tp = np.sum([1.0 for i in range(len(true_val)) if true_val[i] == pred_val[i] == 1])
+    # need expert knowledge to what is acceptable?
+    norm = np.max(ts_val) - np.min(ts_val)
+
+    for pred, true_v, l_v, u_v, ts_v in zip(pred_val, true_val, model_val['lower value'].tolist(),
+                                            model_val['upper value'].tolist(), ts_val):
+        if pred != true_v:
+            if pred == 0:
+                if ts_v < l_v:
+                    fn += (l_v - ts_v) / norm
+                if ts_v > u_v:
+                    fn += (ts_v - u_v) / norm
+            else:
+                if ts_v < l_v:
+                    fp += (l_v - ts_v) / norm
+                if ts_v > u_v:
+                    fp += (ts_v - u_v) / norm
+
+    f = tp / (tp + 0.5 * (fp + fn))
+    return f

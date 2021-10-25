@@ -26,7 +26,7 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 from analysis.preanalysis import visualize, series_analysis
-from analysis.postanalysis import confusion_visualization
+from analysis.postanalysis import confusion_visualization, weighted_f_score
 from analysis.time_series_feature_analysis import analyse_series_properties
 from models.nets import LSTM_autoencoder, Vae, SeqSeq
 from models.sr.main import detect_anomaly
@@ -68,7 +68,7 @@ models = {
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
-          'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
+          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'stl': (STL, []),
           # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'deepar': (DeepAR, [], []),
@@ -84,11 +84,11 @@ models = {
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
           # 'sr-cnn': []
-          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-                                    Integer(low=1, high=30, name='MAG_WINDOW'),
-                                    Integer(low=5, high=50, name='SCORE_WINDOW'),
-                                    Integer(low=1, high=100, name='sensitivity')],
-                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
+          #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
+          #                           Integer(low=1, high=100, name='sensitivity')],
+          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
                     [1.15, 1.15]),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
@@ -244,7 +244,7 @@ def fit_base_model(model_params, for_optimization=True):
         try:
             start_time = time.time()
             window = data_test.iloc[start:start + anomaly_window]
-            data_in_memory = pd.concat([data_in_memory, window])[-3000:]
+            data_in_memory = pd.concat([data_in_memory, window])[-1024:]
             X, y = window['value'], window['is_anomaly']
             if y.tolist():
                 if name in ['sarima']:
@@ -364,6 +364,9 @@ def fit_base_model(model_params, for_optimization=True):
             raise e
 
     met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
+    if name in ['sarima', 'lstm']:
+        f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
+        print(f"My f-score: {f} vs standard f score {met_total[2]}")
 
     if not for_optimization:
         # visualize(data)
@@ -435,7 +438,7 @@ class Stopper(EarlyStopper):
 
 if __name__ == '__main__':
     dataset, type = 'yahoo', 'A4Benchmark' #'kpi', 'train'
-    for dataset, type in [('kpi', 'train')]: #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
+    for dataset, type in [('yahoo', 'A4Benchmark'), ('kpi', 'train')]: #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
         for name, (model, bo_space, def_params) in models.items():
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
             for filename in os.listdir(train_data_path):
