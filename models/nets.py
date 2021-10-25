@@ -131,6 +131,16 @@ class LSTM_autoencoder:
         elif self.threshold_model_type == 'dbscan':
             self.threshold_model = DBSCAN(eps=1, min_samples=2, metric='euclidean')
 
+    def get_pred_mean(self):
+        pred_thr = pd.DataFrame([])
+        if self.threshold_model_type == 'sarima':
+            pred_thr['upper value'] = self.threshold_model.get_pred_mean()
+        else:
+            pred_thr['upper value'] = [self.threshold for _ in range(len(self.loss))]
+        pred_thr['lower value'] = 0.0
+
+        return pred_thr
+
     def predict(self, X, timestamp):
         y_pred = []
         mean_val = np.mean(X.flatten())
