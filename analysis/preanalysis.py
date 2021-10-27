@@ -1,3 +1,5 @@
+import copy
+
 import scipy
 import tsfresh
 from matplotlib import pyplot
@@ -8,8 +10,10 @@ import tsfresh.feature_extraction.feature_calculators as fc
 import nolds
 import pandas as pd
 import numpy as np
-from scipy import stats, fft, fftpack
+from scipy import stats, fft, fftpack, signal
 from scipy.special import boxcox1p
+
+from utils import handle_missing_values_kpi
 
 
 def visualize(data):
@@ -64,17 +68,14 @@ def full_analysis(data, dataset, datatype):
     periodicity_analysis(data, dataset, datatype)
 
 
-def periodicity_analysis(data, dataset, datatype):
-    # result_mul = seasonal_decompose(data['value'], model='multiplicative', extrapolate_trend='freq', period=12)
-    # deseasonalized = data.value.values / result_mul.seasonal
-    # pyplot.plot(deseasonalized)
-    # pyplot.plot()
-    #
-    # pyplot.savefig(f'results/imgs/preanalysis/{dataset}_{datatype}_deseasonalized_decompose.png')
-    # pyplot.clf()
-
+def periodicity_analysis(data_, dataset='', datatype=''):
+    data = copy.deepcopy(data_)
     freq = data['timestamp'].tolist()[1] - data['timestamp'].tolist()[0]
 
+    data['value'] = signal.detrend(data.value.values)
+    data.set_index('timestamp', inplace=True)
+
+    ####################################################################################################################
     ft_vals = fftpack.fft(data['value'].tolist())[1:]
     frequencies = fftpack.fftfreq(data['value'].shape[0], freq)
     periods = 1 / frequencies[1:]
@@ -90,16 +91,16 @@ def periodicity_analysis(data, dataset, datatype):
     print(f'Found most likely periodicity {most_probable_period}')
     pyplot.clf()
 
-    print(most_probable_period)
-    print(type(most_probable_period))
+    data['value'] = data['value'] + 2 * abs(data['value'].min())
     result_mul = seasonal_decompose(data['value'], model='multiplicative', extrapolate_trend='freq', period=most_probable_period)
     deseasonalized = data.value.values / result_mul.seasonal
+    print(deseasonalized.values)
     pyplot.plot(deseasonalized)
     pyplot.plot()
 
     pyplot.savefig(f'results/imgs/preanalysis/{dataset}_{datatype}_deseasonalized_decompose2.png')
     pyplot.clf()
 
-    return most_probable_period
+    return most_probable_period, deseasonalized.values, 2 * abs(data['value'].min())
 
 

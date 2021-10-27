@@ -90,3 +90,20 @@ def plot_dbscan(preds, dataset, type, filename, data_test, window_sz):
 
     plt.savefig(
         f'results/imgs/{dataset}/{type}/dbscan/dbscan_{filename.replace(".csv", "")}_groups.png')
+
+
+def handle_missing_values_kpi(data, start=None):
+    data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
+    data.set_index('timestamp', inplace=True)
+    data = data.asfreq('T')
+    if start:
+        dti = pd.DataFrame([])
+        dti.loc[:, 'timestamp'] = pd.date_range(start + pd.Timedelta(minutes=1),
+                                                periods=data.shape[0], freq="T")
+        dti.set_index('timestamp', inplace=True)
+        dti['value'] = None
+        res = pd.concat((data, dti)).sort_values(by='value')
+        res = res[~res.index.duplicated(keep='first')]
+        res = res.sort_index()
+        return res
+    return data

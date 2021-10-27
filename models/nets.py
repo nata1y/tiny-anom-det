@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 # print(f'Torch cuda is avaliable {torch.cuda.is_available()}')
+from analysis.preanalysis import periodicity_analysis
 from models.sr.spectral_residual import SpectralResidual, MAG_WINDOW, SCORE_WINDOW, THRESHOLD
 from models.sr.util import DetectMode
 from models.statistical_models import SARIMA

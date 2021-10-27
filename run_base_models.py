@@ -10,7 +10,7 @@ from matplotlib import pyplot
 from pytorch_forecasting import DeepAR
 from sklearn import metrics, preprocessing
 from sklearn.cluster import DBSCAN, KMeans
-from utils import Stopper
+from utils import Stopper, handle_missing_values_kpi
 from sklearn.covariance import EllipticEnvelope
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
@@ -26,7 +26,7 @@ from statsmodels.tsa._stl import STL
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from analysis.preanalysis import visualize, series_analysis, full_analysis
+from analysis.preanalysis import visualize, series_analysis, periodicity_analysis
 from analysis.postanalysis import confusion_visualization, weighted_f_score
 from analysis.time_series_feature_analysis import analyse_series_properties
 from models.nets import LSTM_autoencoder, Vae, SeqSeq
@@ -47,8 +47,8 @@ from pycaret.anomaly import *
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 60
-step = 60
+anomaly_window = 1024
+step = 1024
 data_test = None
 models = {
           # scale, n_clusters = 2
@@ -234,6 +234,7 @@ def fit_base_model(model_params, for_optimization=True):
             #     diff = end_time - start_time
             #     print(f"Trained model {name} on {filename} for {diff}")
 
+    f1 = []
     all_labels = []
     y_pred_total = []
     idx = 0
@@ -245,7 +246,15 @@ def fit_base_model(model_params, for_optimization=True):
         try:
             start_time = time.time()
             window = data_test.iloc[start:start + anomaly_window]
-            data_in_memory = pd.concat([data_in_memory, window])[-1024:]
+            data_in_memory = pd.concat([data_in_memory, window])[-3000:]
+            if deseasonalize:
+                window_ = copy.deepcopy(data_in_memory)
+                window_['value'] = window_['value'] + shift
+                result_mul = seasonal_decompose(window_['value'], model='multiplicative', extrapolate_trend='freq',
+                                                period=period)
+                deseasonalized_memory = window_.value.values / result_mul.seasonal
+                window['value'] = deseasonalized_memory[-anomaly_window:]
+
             X, y = window['value'], window['is_anomaly']
             if y.tolist():
                 if name in ['sarima']:
@@ -354,10 +363,10 @@ def fit_base_model(model_params, for_optimization=True):
                         y_pred_total = [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)]
 
                 # print(metrics.classification_report(y, y_pred))
-                # met = precision_recall_fscore_support(y, y_pred[:len(list(y))], average='weighted')
+                met = precision_recall_fscore_support(y, y_pred[:len(list(y))], average='binary')
                 # precision.append(met[0])
                 # recall.append(met[1])
-                # f1.append(met[2])
+                f1.append(met[2])
                 # print(f"Model {name} has f1-score {f1[-1]} on window {start}")
                 end_time = time.time()
                 pred_time.append((end_time - start_time))
@@ -365,6 +374,9 @@ def fit_base_model(model_params, for_optimization=True):
             raise e
 
     met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
+    # Do f1 score smoothing
+    smoothed_f1 = pd.DataFrame(f1).ewm(com=0.5).mean()
+
     if name in ['sarima', 'lstm']:
         f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
         print(f"My f-score: {f} vs standard f score {met_total[2]}")
@@ -430,6 +442,7 @@ def fit_base_model(model_params, for_optimization=True):
 
 
 if __name__ == '__main__':
+    deseasonalize = True
     dataset, type = 'yahoo', 'A4Benchmark' #'kpi', 'train'
     for dataset, type in [('kpi', 'train'), ('yahoo', 'A4Benchmark'), ('kpi', 'train')]:
         #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
@@ -439,21 +452,18 @@ if __name__ == '__main__':
                 f = os.path.join(train_data_path, filename)
                 if os.path.isfile(f):
                     print(f"Training model {name} with data {filename}")
-                    data = pd.read_csv(f)
+                    data = pd.read_csv(f)[-3000:]
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+
+                    if deseasonalize:
+                        period, deseason_data, shift = periodicity_analysis(data, dataset, type)
+                        data['value'] = deseason_data
 
                     if dataset == 'kpi':
                         data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
 
-                    ####################################################################################################
-                    # data = data_test
-                    # data = data[data['timestamp'] > 1500200000]
-                    # data = data[data['timestamp'] < 1500300000]
-                    # ####################################################################################################
-                    # full_analysis(data, dataset, type)
-
                     fit_base_model(def_params, for_optimization=False)
-                    continue
+                    break
 
                     if name not in ['knn', 'sarima']:
                     ################ Bayesian optimization ###################################################
