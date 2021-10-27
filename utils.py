@@ -2,6 +2,15 @@ import numpy as np
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+from skopt.callbacks import EarlyStopper
+
+
+class Stopper(EarlyStopper):
+    def __call__(self, result):
+        ret = False
+        if result.func_vals[-1] == 1.0:
+            ret = True
+        return ret
 
 
 def create_dataset(X, y, time_steps=60):

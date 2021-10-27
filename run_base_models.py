@@ -10,6 +10,7 @@ from matplotlib import pyplot
 from pytorch_forecasting import DeepAR
 from sklearn import metrics, preprocessing
 from sklearn.cluster import DBSCAN, KMeans
+from utils import Stopper
 from sklearn.covariance import EllipticEnvelope
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
@@ -25,7 +26,7 @@ from statsmodels.tsa._stl import STL
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from analysis.preanalysis import visualize, series_analysis
+from analysis.preanalysis import visualize, series_analysis, full_analysis
 from analysis.postanalysis import confusion_visualization, weighted_f_score
 from analysis.time_series_feature_analysis import analyse_series_properties
 from models.nets import LSTM_autoencoder, Vae, SeqSeq
@@ -428,30 +429,31 @@ def fit_base_model(model_params, for_optimization=True):
     return 1.0 - met_total[2]
 
 
-class Stopper(EarlyStopper):
-    def __call__(self, result):
-        ret = False
-        if result.func_vals[-1] == 1.0:
-            ret = True
-        return ret
-
-
 if __name__ == '__main__':
     dataset, type = 'yahoo', 'A4Benchmark' #'kpi', 'train'
-    for dataset, type in [('yahoo', 'A4Benchmark'), ('kpi', 'train')]: #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
+    for dataset, type in [('kpi', 'train'), ('yahoo', 'A4Benchmark'), ('kpi', 'train')]:
+        #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
         for name, (model, bo_space, def_params) in models.items():
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
             for filename in os.listdir(train_data_path):
                 f = os.path.join(train_data_path, filename)
                 if os.path.isfile(f):
                     print(f"Training model {name} with data {filename}")
-                    data = pd.read_csv(f)[-3000:]
+                    data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+
                     if dataset == 'kpi':
                         data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
 
+                    ####################################################################################################
+                    # data = data_test
+                    # data = data[data['timestamp'] > 1500200000]
+                    # data = data[data['timestamp'] < 1500300000]
+                    # ####################################################################################################
+                    # full_analysis(data, dataset, type)
+
                     fit_base_model(def_params, for_optimization=False)
-                    quit()
+                    continue
 
                     if name not in ['knn', 'sarima']:
                     ################ Bayesian optimization ###################################################

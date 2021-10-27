@@ -8,7 +8,7 @@ import tsfresh.feature_extraction.feature_calculators as fc
 import nolds
 import pandas as pd
 import numpy as np
-from scipy import stats
+from scipy import stats, fft, fftpack
 from scipy.special import boxcox1p
 
 
@@ -57,4 +57,49 @@ def series_analysis(data):
         lyapunov_e = -1.0
 
     return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov_e
+
+
+def full_analysis(data, dataset, datatype):
+    # series_analysis(data)
+    periodicity_analysis(data, dataset, datatype)
+
+
+def periodicity_analysis(data, dataset, datatype):
+    # result_mul = seasonal_decompose(data['value'], model='multiplicative', extrapolate_trend='freq', period=12)
+    # deseasonalized = data.value.values / result_mul.seasonal
+    # pyplot.plot(deseasonalized)
+    # pyplot.plot()
+    #
+    # pyplot.savefig(f'results/imgs/preanalysis/{dataset}_{datatype}_deseasonalized_decompose.png')
+    # pyplot.clf()
+
+    freq = data['timestamp'].tolist()[1] - data['timestamp'].tolist()[0]
+
+    ft_vals = fftpack.fft(data['value'].tolist())[1:]
+    frequencies = fftpack.fftfreq(data['value'].shape[0], freq)
+    periods = 1 / frequencies[1:]
+
+    pyplot.figure()
+    pyplot.plot(periods, abs(ft_vals), 'o')
+    pyplot.xlim(0, freq * data.shape[0])
+    pyplot.xlabel('Period')
+    pyplot.ylabel('FFT freq')
+
+    pyplot.savefig(f'results/imgs/preanalysis/{dataset}_{datatype}_periods_fft.png')
+    most_probable_period = int(abs(periods[np.argmax(ft_vals)]) / freq)
+    print(f'Found most likely periodicity {most_probable_period}')
+    pyplot.clf()
+
+    print(most_probable_period)
+    print(type(most_probable_period))
+    result_mul = seasonal_decompose(data['value'], model='multiplicative', extrapolate_trend='freq', period=most_probable_period)
+    deseasonalized = data.value.values / result_mul.seasonal
+    pyplot.plot(deseasonalized)
+    pyplot.plot()
+
+    pyplot.savefig(f'results/imgs/preanalysis/{dataset}_{datatype}_deseasonalized_decompose2.png')
+    pyplot.clf()
+
+    return most_probable_period
+
 
