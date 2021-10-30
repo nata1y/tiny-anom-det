@@ -69,6 +69,12 @@ def full_analysis(data, dataset, datatype):
 
 
 def periodicity_analysis(data_, dataset='', datatype=''):
+    pyplot.plot(data_['timestamp'], data_['value'])
+    pyplot.plot()
+
+    pyplot.savefig(f'results/imgs/preanalysis/{dataset}_{datatype}_train.png')
+    pyplot.clf()
+
     data = copy.deepcopy(data_)
     freq = data['timestamp'].tolist()[1] - data['timestamp'].tolist()[0]
 
@@ -91,16 +97,6 @@ def periodicity_analysis(data_, dataset='', datatype=''):
     print(f'Found most likely periodicity {most_probable_period}')
     pyplot.clf()
 
-    data['value'] = data['value'] + 2 * abs(data['value'].min())
-    result_mul = seasonal_decompose(data['value'], model='multiplicative', extrapolate_trend='freq', period=most_probable_period)
-    deseasonalized = data.value.values / result_mul.seasonal
-    print(deseasonalized.values)
-    pyplot.plot(deseasonalized)
-    pyplot.plot()
-
-    pyplot.savefig(f'results/imgs/preanalysis/{dataset}_{datatype}_deseasonalized_decompose2.png')
-    pyplot.clf()
-
-    return most_probable_period, deseasonalized.values, 2 * abs(data['value'].min())
+    return most_probable_period
 
 

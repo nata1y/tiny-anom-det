@@ -10,6 +10,9 @@ from matplotlib import pyplot
 from pytorch_forecasting import DeepAR
 from sklearn import metrics, preprocessing
 from sklearn.cluster import DBSCAN, KMeans
+
+from models.decompose_model import DecomposeResidual
+from models.ensembel import Ensemble
 from utils import Stopper, handle_missing_values_kpi
 from sklearn.covariance import EllipticEnvelope
 from sklearn.decomposition import PCA
@@ -47,9 +50,11 @@ from pycaret.anomaly import *
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 1024
-step = 1024
+anomaly_window = 60
+step = 60
 data_test = None
+
+
 models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, [], []),
@@ -69,9 +74,9 @@ models = {
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
-          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
+          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [10]),
           # 'stl': (STL, []),
-          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'deepar': (DeepAR, [], []),
           # 'prophet': (OutlierProphet, [Real(low=0.01, high=5.0, name='threshold'),
           #                              Categorical(['linear', 'logistic'], name='growth')], [0.9, 'linear']),
@@ -90,8 +95,10 @@ models = {
           #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
           #                           Integer(low=1, high=100, name='sensitivity')],
           #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-                    [1.15, 1.15]),
+          # 'seasonal_decomp': (DecomposeResidual, [], []),
+            # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+            #           [1.15, 1.15]),
+          'ensemble': (Ensemble, [], []),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
           #                      Integer(low=1, high=100, name='samples'),
@@ -163,6 +170,10 @@ def fit_base_model(model_params, for_optimization=True):
         percent_anomaly = model_params[3]
     elif name == 'deepar':
         model = DeepAR()
+    elif name == 'seasonal_decomp':
+        model = DecomposeResidual()
+    elif name == 'ensemble':
+        model = Ensemble(filename=filename, anomaly_window=anomaly_window)
 
     if name in ['sarima', 'es']:
 
@@ -201,6 +212,10 @@ def fit_base_model(model_params, for_optimization=True):
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'sr_alibi':
         model.infer_threshold(data_train[['value']].to_numpy(), threshold_perc=percent_anomaly)
+    elif name == 'seasonal_decomp':
+        model.fit(data_train[['timestamp', 'value']], dataset)
+    elif name == 'ensemble':
+        model.fit(data_train, dataset, type)
     elif name == 'deepar':
         X, y = create_dataset(data_train[['value']], data_train[['value']], anomaly_window)
         start_time = time.time()
@@ -250,7 +265,7 @@ def fit_base_model(model_params, for_optimization=True):
             if deseasonalize:
                 window_ = copy.deepcopy(data_in_memory)
                 window_['value'] = window_['value'] + shift
-                result_mul = seasonal_decompose(window_['value'], model='multiplicative', extrapolate_trend='freq',
+                result_mul = seasonal_decompose(window_['value'], model='additive', extrapolate_trend='freq',
                                                 period=period)
                 deseasonalized_memory = window_.value.values / result_mul.seasonal
                 window['value'] = deseasonalized_memory[-anomaly_window:]
@@ -266,6 +281,8 @@ def fit_base_model(model_params, for_optimization=True):
                     y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
                     stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
                     model.fit(stacked_res, dataset)
+                elif name == 'ensemble':
+                    y_pred = model.predict(window)
                 elif name == 'sr':
                     model.__series__ = data_in_memory[['value', 'timestamp']]
                     if model.dynamic_threshold:
@@ -399,12 +416,16 @@ def fit_base_model(model_params, for_optimization=True):
             model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test)
         elif name in ['lstm']:
             model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+        # elif name == 'ensemble':
+        #     model.plot(dataset)
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test)
             # if model.dynamic_threshold:
             #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
         elif name == 'dbscan':
             plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
+        # elif name == 'seasonal_decomp':
+        #     model.plot(type, filename, )
 
         try:
             tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
@@ -442,9 +463,9 @@ def fit_base_model(model_params, for_optimization=True):
 
 
 if __name__ == '__main__':
-    deseasonalize = True
-    dataset, type = 'yahoo', 'A4Benchmark' #'kpi', 'train'
-    for dataset, type in [('kpi', 'train'), ('yahoo', 'A4Benchmark'), ('kpi', 'train')]:
+    deseasonalize = False
+    dataset, type = 'yahoo', 'A4Benchmark'
+    for dataset, type in [('yahoo', 'real'), ('yahoo', 'A4Benchmark'), ('kpi', 'train')]:
         #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
         for name, (model, bo_space, def_params) in models.items():
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
@@ -452,18 +473,17 @@ if __name__ == '__main__':
                 f = os.path.join(train_data_path, filename)
                 if os.path.isfile(f):
                     print(f"Training model {name} with data {filename}")
-                    data = pd.read_csv(f)[-3000:]
+                    data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
 
                     if deseasonalize:
-                        period, deseason_data, shift = periodicity_analysis(data, dataset, type)
-                        data['value'] = deseason_data
+                        period = periodicity_analysis(data, dataset, type)
 
                     if dataset == 'kpi':
-                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))[:10000]
+                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
 
                     fit_base_model(def_params, for_optimization=False)
-                    break
+                    continue
 
                     if name not in ['knn', 'sarima']:
                     ################ Bayesian optimization ###################################################
