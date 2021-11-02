@@ -36,10 +36,10 @@ class SARIMA:
         self.latest_train_snippest = pd.DataFrame([])
 
     def _get_time_index(self, data):
-        if self.dataset in ['yahoo']:
+        if self.dataset in ['yahoo', 'kpi']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
-        if self.dataset in ['kpi']:
-            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
+        if self.dataset in ['NAB']:
+            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'])
         data.set_index('timestamp', inplace=True)
         if self.dataset in ['kpi']:
             data = data.asfreq('T')
@@ -116,13 +116,14 @@ class SARIMA:
         y_pred = []
         # print(newdf)
         newdf = self._get_time_index(newdf)
-        newdf_ = newdf.dropna(subset=['value'])
 
         # # add new observation
         # refit=True
         ################################################################################################################
         old_model = copy.deepcopy(self.model)
         ################################################################################################################
+        print(self.model.fittedvalues)
+        print(newdf)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.25)
 
@@ -135,15 +136,15 @@ class SARIMA:
         self.full_pred.append(pred)
         mean_var = np.var(pred.predicted_mean)
 
-        mean_anomaly = False
-        try:
-            if mean_var > 2 * np.max(self.mean_fluctuation):
-                print(f'Means fluctuate too much. Array of means is {self.mean_fluctuation}, current mean is {mean_var}')
-                mean_anomaly = True
-            else:
-                self.mean_fluctuation.append(mean_var)
-        except:
-            self.mean_fluctuation.append(mean_var)
+        # mean_anomaly = False
+        # try:
+        #     if mean_var > 2 * np.max(self.mean_fluctuation):
+        #         print(f'Means fluctuate too much. Array of means is {self.mean_fluctuation}, current mean is {mean_var}')
+        #         mean_anomaly = True
+        #     else:
+        #         self.mean_fluctuation.append(mean_var)
+        # except:
+        #     self.mean_fluctuation.append(mean_var)
 
         pred_ci = pred.conf_int()
         deanomalized_window = pd.DataFrame([])
@@ -274,7 +275,6 @@ class SARIMA:
             #                     color='b', alpha=.2)
 
             pred_ci = pred.conf_int()
-            # play around with lower value of threshold
             if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
                 pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
                 ax.fill_between(pred_ci.index,
@@ -303,15 +303,15 @@ class SARIMA:
         plt.close('all')
         plt.clf()
 
-        plt.plot(self.mean_fluctuation)
-        ax.set_xlabel('Window')
-        ax.set_ylabel('Variance of predicted means')
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/sarima/sarima_{filename.replace(".csv", "")}_mean_var.png')
-
-        plt.close('all')
-        plt.clf()
-
-        self.full_pred = []
+        # plt.plot(self.mean_fluctuation)
+        # ax.set_xlabel('Window')
+        # ax.set_ylabel('Variance of predicted means')
+        # plt.savefig(f'results/imgs/{dataset}/{datatype}/sarima/sarima_{filename.replace(".csv", "")}_mean_var.png')
+        #
+        # plt.close('all')
+        # plt.clf()
+        #
+        # self.full_pred = []
 
 
 class ExpSmoothing:

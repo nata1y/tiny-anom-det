@@ -50,8 +50,8 @@ from pycaret.anomaly import *
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 60
-step = 60
+anomaly_window = 1024
+step = 1024
 data_test = None
 
 
@@ -59,11 +59,11 @@ models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, [], []),
           # don't scale novelty=True
-          'dbscan': (DBSCAN,
-                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-                     Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-                                 'nan_euclidean', dtw], name='metric')],
-                     [1, 2, dtw]),
+          # 'dbscan': (DBSCAN,
+          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+          #            Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+          #                        'nan_euclidean', dtw], name='metric')],
+          #            [1, 2, dtw]),
           # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
           #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
           # 'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
@@ -76,7 +76,7 @@ models = {
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [10]),
           # 'stl': (STL, []),
-          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'deepar': (DeepAR, [], []),
           # 'prophet': (OutlierProphet, [Real(low=0.01, high=5.0, name='threshold'),
           #                              Categorical(['linear', 'logistic'], name='growth')], [0.9, 'linear']),
@@ -498,8 +498,12 @@ if __name__ == '__main__':
                     if dataset == 'kpi':
                         data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
 
-                    # fit_base_model(def_params, for_optimization=False)
-                    # continue
+                    try:
+                        fit_base_model(def_params, for_optimization=False)
+                    except Exception as e:
+                        print(e)
+                        print(f'Error on {filename}')
+                    continue
 
                     if name not in ['knn', 'sarima']:
                     ################ Bayesian optimization ###################################################
