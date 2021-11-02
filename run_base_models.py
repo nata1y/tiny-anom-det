@@ -13,7 +13,7 @@ from sklearn.cluster import DBSCAN, KMeans
 
 from models.decompose_model import DecomposeResidual
 from models.ensembel import Ensemble
-from utils import Stopper, handle_missing_values_kpi
+from utils import Stopper, handle_missing_values_kpi, preprocess_nab_labels, preprocess_telemanom_datatset
 from sklearn.covariance import EllipticEnvelope
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
@@ -59,11 +59,11 @@ models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, [], []),
           # don't scale novelty=True
-          # 'dbscan': (DBSCAN,
-          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-          #            Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-          #                        'nan_euclidean', dtw], name='metric')],
-          #            [1, 2, dtw]),
+          'dbscan': (DBSCAN,
+                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+                     Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+                                 'nan_euclidean', dtw], name='metric')],
+                     [1, 2, dtw]),
           # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
           #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
           # 'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
@@ -76,7 +76,7 @@ models = {
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [10]),
           # 'stl': (STL, []),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'deepar': (DeepAR, [], []),
           # 'prophet': (OutlierProphet, [Real(low=0.01, high=5.0, name='threshold'),
           #                              Categorical(['linear', 'logistic'], name='growth')], [0.9, 'linear']),
@@ -92,13 +92,13 @@ models = {
           # 'sr-cnn': []
           # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
           #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=50, name='SCORE_WINDOW'),
+          #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
           #                           Integer(low=1, high=100, name='sensitivity')],
           #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
-            # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-            #           [1.15, 1.15]),
-          'ensemble': (Ensemble, [], []),
+          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+                     [1.15, 1.15]),
+          # 'ensemble': (Ensemble, [], []),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
           #                      Integer(low=1, high=100, name='samples'),
@@ -380,10 +380,10 @@ def fit_base_model(model_params, for_optimization=True):
                         y_pred_total = [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)]
 
                 # print(metrics.classification_report(y, y_pred))
-                met = precision_recall_fscore_support(y, y_pred[:len(list(y))], average='binary')
+                # met = precision_recall_fscore_support(y, y_pred[:len(list(y))], average='binary')
                 # precision.append(met[0])
                 # recall.append(met[1])
-                f1.append(met[2])
+                # f1.append(met[2])
                 # print(f"Model {name} has f1-score {f1[-1]} on window {start}")
                 end_time = time.time()
                 pred_time.append((end_time - start_time))
@@ -392,7 +392,7 @@ def fit_base_model(model_params, for_optimization=True):
 
     met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
     # Do f1 score smoothing
-    smoothed_f1 = pd.DataFrame(f1).ewm(com=0.5).mean()
+    # smoothed_f1 = pd.DataFrame(f1).ewm(com=0.5).mean()
 
     if name in ['sarima', 'lstm']:
         f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
@@ -400,32 +400,36 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         # visualize(data)
-        trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
-            series_analysis(data[:25000])
 
         try:
             stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
         except:
             stats = pd.DataFrame([])
 
-        confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
-                                data_test['is_anomaly'].tolist(), y_pred_total,
-                                dataset, name, filename.replace('.csv', ''), type)
+        try:
+            confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
+                                    data_test['is_anomaly'].tolist(), y_pred_total,
+                                    dataset, name, filename.replace('.csv', ''), type)
+        except Exception as e:
+            print(e)
 
-        if name in ['sarima', 'es']:
-            model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test)
-        elif name in ['lstm']:
-            model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
-        # elif name == 'ensemble':
-        #     model.plot(dataset)
-        elif name == 'sr':
-            model.plot(dataset, type, filename, data_test)
-            # if model.dynamic_threshold:
-            #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
-        elif name == 'dbscan':
-            plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
-        # elif name == 'seasonal_decomp':
-        #     model.plot(type, filename, )
+        try:
+            if name in ['sarima', 'es']:
+                model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test)
+            elif name in ['lstm']:
+                model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+            # elif name == 'ensemble':
+            #     model.plot(dataset)
+            elif name == 'sr':
+                model.plot(dataset, type, filename, data_test)
+                # if model.dynamic_threshold:
+                #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+            elif name == 'dbscan':
+                plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
+            # elif name == 'seasonal_decomp':
+            #     model.plot(type, filename, )
+        except Exception as e:
+            print(e)
 
         try:
             tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
@@ -434,6 +438,16 @@ def fit_base_model(model_params, for_optimization=True):
             specificity = None
             tn, fp, fn, tp = None, None, None, None
 
+        try:
+            trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
+                series_analysis(data)
+        except:
+                try:
+                    trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
+                        series_analysis(data[:25000])
+                except:
+                    trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
+                        None, None, None, None, None, None, None, None
         stats = stats.append({
             'model': name,
             'dataset': filename.replace('.csv', ''),
@@ -465,13 +479,15 @@ def fit_base_model(model_params, for_optimization=True):
 if __name__ == '__main__':
     deseasonalize = False
     dataset, type = 'yahoo', 'A4Benchmark'
-    for dataset, type in [('yahoo', 'real'), ('yahoo', 'A4Benchmark'), ('kpi', 'train')]:
+    for dataset, type in [('NAB', 'relevant')]:
         #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
         for name, (model, bo_space, def_params) in models.items():
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
             for filename in os.listdir(train_data_path):
                 f = os.path.join(train_data_path, filename)
-                if os.path.isfile(f):
+                res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}/'
+                print(res_data_path)
+                if os.path.isfile(f) and f'{name}_{filename.split(".")[0]}.png' not in os.listdir(res_data_path):
                     print(f"Training model {name} with data {filename}")
                     data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
@@ -482,8 +498,8 @@ if __name__ == '__main__':
                     if dataset == 'kpi':
                         data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
 
-                    fit_base_model(def_params, for_optimization=False)
-                    continue
+                    # fit_base_model(def_params, for_optimization=False)
+                    # continue
 
                     if name not in ['knn', 'sarima']:
                     ################ Bayesian optimization ###################################################

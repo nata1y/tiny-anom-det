@@ -93,8 +93,6 @@ class SpectralResidual:
         fig = go.Figure()
 
         datatest.set_index('timestamp', inplace=True)
-        self.history = self.history[self.history['timestamp'] > 1500200000]
-        self.history = self.history[self.history['timestamp'] < 1500300000]
 
         self.history.set_index('timestamp', inplace=True)
 

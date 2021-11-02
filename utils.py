@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import os
 import pandas as pd
@@ -107,3 +109,64 @@ def handle_missing_values_kpi(data, start=None):
         res = res.sort_index()
         return res
     return data
+
+
+def merge_model_performance():
+    train_df = None
+    for tp in ['real', 'synthetic']:
+        dbscan = pd.read_csv(f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_{tp}_stats_dbscan.csv')
+        lstm = pd.read_csv(f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_{tp}_stats_lstm.csv')
+        sarima = pd.read_csv(f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_real_{tp}_sarima.csv')
+        sr = pd.read_csv(
+            f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_{tp}_stats_sr.csv')
+        if not train_df:
+            idx = 0
+            train_df = dbscan[['autocorrelation', 'dataset', 'hurst', 'kurtosis', 'max_lyapunov_e',	'non-linearity',
+                               'seasonality', 'skewness', 'trend']]
+        else:
+            idx = train_df.shape[0]
+            train_df = pd.concat([train_df, dbscan[['autocorrelation', 'dataset', 'hurst', 'kurtosis', 'max_lyapunov_e',
+                                                    'non-linearity', 'seasonality', 'skewness', 'trend']]])
+        pos_f1_array = {
+            0: 'dbscan',
+            1: 'lstm',
+            2: 'sarima',
+            3: 'sr'
+        }
+        for f_dbscan, f_lstm, f_sarima, f_sr in zip(dbscan['f1'], lstm['f1'], sarima['f1'], sr['f1']):
+            model_list = [f_dbscan, f_lstm, f_sarima, f_sr]
+            best_model = pos_f1_array[model_list.index(max(model_list))]
+            train_df.pos[idx, 'model_to_use'] = best_model
+            idx += 1
+
+    train_df.to_csv('ensemble_train_data.csv')
+
+
+def preprocess_nab_labels(root_path):
+    with open(root_path + '/datasets/NAB/labels/combined_labels.json') as json_file:
+        labels = json.load(json_file)
+    for attribute, value in labels.items():
+        try:
+            dataset = pd.read_csv(root_path + '/datasets/NAB/' + attribute)
+            dataset['is_anomaly'] = 0
+            dataset.set_index('timestamp', inplace=True)
+            for a_idx in value:
+                dataset.loc[a_idx, 'is_anomaly'] = 1.0
+
+            dataset.to_csv(root_path + '/datasets/NAB/train/' + attribute.split('/')[-1])
+        except:
+            pass
+
+
+def preprocess_telemanom_datatset(root_path_save):
+    root_path = f'C:\\Users\\oxifl\\Documents\\uni\\telemanom\\data\\'
+    for tp in ['train', 'test']:
+        for filename in os.listdir(root_path + f'{tp}/'):
+            f = os.path.join(root_path + f'{tp}\\', filename)
+            if os.path.isfile(f):
+                print(root_path + f'{tp}\\' + filename)
+                data = np.load(root_path + f'{tp}\\' + filename)
+                print(data)
+
+                pd_data = pd.DataFrame(data)
+                pd_data.to_csv(root_path_save + f'/datasets/telemanom/{tp}/' + filename.split('.')[0] + '.csv')

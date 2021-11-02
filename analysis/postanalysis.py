@@ -13,7 +13,6 @@ import numpy as np
 
 
 def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, datatype):
-    print(np.max(x), np.min(x))
     tp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 1]
     tn = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 0]
     fp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == 0 and pred_val[i] == 1]
