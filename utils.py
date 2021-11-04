@@ -145,17 +145,49 @@ def merge_model_performance():
 def preprocess_nab_labels(root_path):
     with open(root_path + '/datasets/NAB/labels/combined_labels.json') as json_file:
         labels = json.load(json_file)
+
+    # with open(root_path + '/datasets/NAB/labels/combined_windows.json') as json_file:
+    #     labels_window = json.load(json_file)
+
+    # with open(root_path + '/datasets/NAB/labels/combined_windows_tiny.json') as json_file:
+    #     labels_window_tiny = json.load(json_file)
     for attribute, value in labels.items():
         try:
-            dataset = pd.read_csv(root_path + '/datasets/NAB/' + attribute)
+            dataset = pd.read_csv('C:\\Users\\oxifl\\Documents\\uni\\NAB\\data\\' + attribute)
             dataset['is_anomaly'] = 0
             dataset.set_index('timestamp', inplace=True)
             for a_idx in value:
                 dataset.loc[a_idx, 'is_anomaly'] = 1.0
 
-            dataset.to_csv(root_path + '/datasets/NAB/train/' + attribute.split('/')[-1])
-        except:
-            pass
+            dataset.to_csv(root_path + '\\datasets\\NAB\\relevant\\' + attribute.split('/')[-1])
+        except Exception as e:
+            print(e)
+
+    # for attribute, values in labels_window.items():
+    #     try:
+    #         dataset = pd.read_csv(root_path + '/datasets/NAB/relevant/' + attribute.split('/')[-1])
+    #         dataset.set_index('timestamp', inplace=True)
+    #         for value in values:
+    #             start, end = value[0], value[1]
+    #             bool_series = ((dataset.index >= start) & (dataset.index <= end))
+    #             dataset.loc[bool_series, 'is_anomaly'] = 1.0
+    #
+    #         dataset.to_csv(root_path + '/datasets/NAB/relevant/' + attribute.split('/')[-1])
+    #     except:
+    #         pass
+
+    # for attribute, values in labels_window_tiny.items():
+    #     try:
+    #         dataset = pd.read_csv(root_path + '/datasets/NAB/relevant/' + attribute.split('/')[-1])
+    #         dataset.set_index('timestamp', inplace=True)
+    #         for value in values:
+    #             start, end = value[0], value[1]
+    #             bool_series = ((dataset.index >= start) & (dataset.index <= end))
+    #             dataset.loc[bool_series, 'is_anomaly'] = 1.0
+    #
+    #         dataset.to_csv(root_path + '/datasets/NAB/relevant/' + attribute.split('/')[-1])
+    #     except:
+    #         pass
 
 
 def preprocess_telemanom_datatset(root_path_save):

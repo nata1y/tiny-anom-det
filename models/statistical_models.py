@@ -112,7 +112,7 @@ class SARIMA:
         mean_var = np.var(pred.predicted_mean)
         # self.mean_fluctuation.append(mean_var)
 
-    def predict(self, newdf, retrain=False):
+    def predict(self, newdf, optimization=False, retrain=False):
         y_pred = []
         # print(newdf)
         newdf = self._get_time_index(newdf)
@@ -124,12 +124,13 @@ class SARIMA:
         ################################################################################################################
         print(self.model.fittedvalues)
         print(newdf)
-        pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
-                                         dynamic=False, alpha=0.25)
+        # pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
+        #                                  dynamic=False, alpha=0.25)
+        #
+        # self.monitoring_pred.append(pred)
 
-        self.monitoring_pred.append(pred)
-
-        self.model = self.model.append(newdf)
+        if not optimization:
+            self.model = self.model.append(newdf)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
@@ -182,7 +183,7 @@ class SARIMA:
         #             deanomalized_window.loc[idx, 'value'] = row['value']
         ################################################################################################################
 
-        self.model = old_model.append(deanomalized_window)
+        # self.model = old_model.append(deanomalized_window)
 
         # retrain on anomaly but throw away anomalies from dataset
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
@@ -264,7 +265,7 @@ class SARIMA:
         ax = y['value'].plot(label='observed')
 
         idx = 1
-        for _, (pred, mpred) in enumerate(zip(self.full_pred, self.monitoring_pred)):
+        for _, pred in enumerate(self.full_pred):
             # pred_ci = mpred.conf_int()
             # # play around with lower value of threshold
             # if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
@@ -311,7 +312,7 @@ class SARIMA:
         # plt.close('all')
         # plt.clf()
         #
-        # self.full_pred = []
+        self.full_pred = []
 
 
 class ExpSmoothing:

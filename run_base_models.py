@@ -50,8 +50,8 @@ from pycaret.anomaly import *
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 1024
-step = 1024
+anomaly_window = 60
+step = 60
 data_test = None
 
 
@@ -274,7 +274,7 @@ def fit_base_model(model_params, for_optimization=True):
             if y.tolist():
                 if name in ['sarima']:
                     if for_optimization:
-                        y_pred = model.predict(window[['timestamp', 'value']])
+                        y_pred = model.predict(window[['timestamp', 'value']], optimization=True)
                     else:
                         y_pred = model.predict(window[['timestamp', 'value']])
                 elif name == 'es':
@@ -477,6 +477,8 @@ def fit_base_model(model_params, for_optimization=True):
 
 
 if __name__ == '__main__':
+    preprocess_nab_labels(root_path)
+
     deseasonalize = False
     dataset, type = 'yahoo', 'A4Benchmark'
     for dataset, type in [('NAB', 'relevant')]:
@@ -485,9 +487,8 @@ if __name__ == '__main__':
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
             for filename in os.listdir(train_data_path):
                 f = os.path.join(train_data_path, filename)
-                res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}/'
-                print(res_data_path)
-                if os.path.isfile(f) and f'{name}_{filename.split(".")[0]}.png' not in os.listdir(res_data_path):
+                res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
+                if os.path.isfile(f) and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
                     print(f"Training model {name} with data {filename}")
                     data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
@@ -498,23 +499,26 @@ if __name__ == '__main__':
                     if dataset == 'kpi':
                         data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
 
+                    # try:
+                    #     fit_base_model(def_params, for_optimization=False)
+                    # except Exception as e:
+                    #     print(e)
+                    #     print(f'Error on {filename}')
+                    # continue
+
                     try:
-                        fit_base_model(def_params, for_optimization=False)
+                        if name not in ['knn']:
+                        ################ Bayesian optimization ###################################################
+                            bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                                                    random_state=13, verbose=False, x0=def_params)
+
+                            print(f"Found hyper parameters for {name}: {bo_result.x}")
+
+                            fit_base_model(bo_result.x, for_optimization=False)
+                        else:
+                            fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
-                        print(e)
                         print(f'Error on {filename}')
-                    continue
-
-                    if name not in ['knn', 'sarima']:
-                    ################ Bayesian optimization ###################################################
-                        bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11, random_state=13,
-                                                verbose=False, x0=def_params)
-
-                        print(f"Found hyper parameters for {name}: {bo_result.x}")
-
-                        fit_base_model(bo_result.x, for_optimization=False)
-                    else:
-                        fit_base_model(def_params, for_optimization=False)
 
             analyse_series_properties(dataset, type, name)
             # try:

@@ -60,6 +60,11 @@ def series_analysis(data):
     elif lyapunov_e < 0.0:
         lyapunov_e = -1.0
 
+    # tf = tsfresh.extract_features(data, column_id='timestamp')
+    # print(tf)
+    # tf.to_csv('C:\\Users\\oxifl\\Documents\\uni\\tsfresh_example.csv')
+    # quit()
+
     return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov_e
 
 
