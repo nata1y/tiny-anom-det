@@ -5,6 +5,9 @@ import tsfresh
 from matplotlib import pyplot
 from pandas.plotting import autocorrelation_plot
 from scipy.interpolate import splrep
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.pipeline import make_pipeline
+from sktime.transformations.panel.tsfresh import TSFreshFeatureExtractor
 from statsmodels.tsa.seasonal import seasonal_decompose
 import tsfresh.feature_extraction.feature_calculators as fc
 import nolds
@@ -12,8 +15,12 @@ import pandas as pd
 import numpy as np
 from scipy import stats, fft, fftpack, signal
 from scipy.special import boxcox1p
+from sktime.transformations.panel.catch22 import Catch22
+from tsfresh import select_features
+from tsfresh.feature_selection.relevance import calculate_relevance_table
+from tsfresh.utilities.dataframe_functions import impute
 
-from utils import handle_missing_values_kpi
+# from utils import handle_missing_values_kpi
 
 
 def visualize(data):
@@ -60,12 +67,10 @@ def series_analysis(data):
     elif lyapunov_e < 0.0:
         lyapunov_e = -1.0
 
-    # tf = tsfresh.extract_features(data, column_id='timestamp')
+    tf = tsfresh.extract_features(data, column_id='timestamp')
     # print(tf)
-    # tf.to_csv('C:\\Users\\oxifl\\Documents\\uni\\tsfresh_example.csv')
-    # quit()
 
-    return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov_e
+    return trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov_e, tf
 
 
 def full_analysis(data, dataset, datatype):
@@ -105,3 +110,39 @@ def periodicity_analysis(data_, dataset='', datatype=''):
     return most_probable_period
 
 
+def full_analyzis(data_train):
+    c22 = Catch22()
+    data_train['value'] = data_train['value'].apply(lambda x: np.array([x]))
+    c22.fit(data_train[['value']], data_train['is_anomaly'])
+    transformed_data = c22.transform(data_train[['value']])
+
+    print(transformed_data.head())
+    transformed_data.to_csv(f'results/ts_properties/test_filtered_features_c22.csv')
+    ####################################################################################################################
+
+    transformer = TSFreshFeatureExtractor(default_fc_parameters="efficient")
+    extracted_features = transformer.fit_transform(data_train[['value']].to_numpy().reshape((data_train.shape[0], 1, 1)))
+    print(extracted_features.head())
+    extracted_features.to_csv(f'results/ts_properties/test_filtered_features_tf.csv')
+
+    classifier = make_pipeline(
+        TSFreshFeatureExtractor(default_fc_parameters="efficient", show_warnings=False), IsolationForest()
+    )
+    res = classifier.fit_predict(data_train[['value']].to_numpy().reshape((data_train.shape[0], 1, 1)))
+    print(res)
+    ####################################################################################################################
+
+    # data_train['id'] = data_train.index
+    # extracted_features = tsfresh.extract_features(data_train[['id', 'value', 'timestamp']], column_id='id',
+    #                                               column_sort='timestamp', column_value="value")
+    # print(extracted_features)
+    # impute(extracted_features)
+    #
+    # relevance_table = calculate_relevance_table(extracted_features, data_train['is_anomaly'])
+    # relevance_table = relevance_table[relevance_table.relevant]
+    # relevance_table.sort_values("p_value", inplace=True)
+    # print(relevance_table)
+    # print(relevance_table.columns)
+    # print(relevance_table.sort_values('p_value', ascending=False)[:11])
+
+    quit()
