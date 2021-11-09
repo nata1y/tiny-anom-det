@@ -1,10 +1,12 @@
 import copy
+import os
 
 import scipy
 import tsfresh
 from matplotlib import pyplot
 from pandas.plotting import autocorrelation_plot
 from scipy.interpolate import splrep
+from scipy.stats import wasserstein_distance
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.pipeline import make_pipeline
 from sktime.transformations.panel.tsfresh import TSFreshFeatureExtractor
@@ -19,7 +21,8 @@ from sktime.transformations.panel.catch22 import Catch22
 from tsfresh import select_features
 from tsfresh.feature_selection.relevance import calculate_relevance_table
 from tsfresh.utilities.dataframe_functions import impute
-
+from catch22 import catch22_all
+import seaborn as sns
 # from utils import handle_missing_values_kpi
 
 
@@ -40,19 +43,21 @@ def visualize(data):
     # res.plot()
 
 
+# Yahoo analysis
 def series_analysis(data):
+    period = periodicity_analysis(data)
     values = data['value']
     posdata = values[values > 0]
     bcdata, lam = stats.boxcox(posdata)
     valuest = boxcox1p(values, lam)
 
-    decompose = seasonal_decompose(values.interpolate(), period=12)
+    decompose = seasonal_decompose(values.interpolate(), period=period)
     seasonality = 1 - (np.var(valuest - decompose.seasonal - decompose.trend) / np.var(valuest - decompose.trend))
     trend = 1 - (np.var(valuest - decompose.seasonal - decompose.trend) / np.var(valuest - decompose.seasonal))
     # Represents long-range dependence.
-    autocrr = fc.autocorrelation(values, lag=20)
+    autocrr = fc.autocorrelation(values, lag=period)
     # A non-linear time-series contains complex dynamics that are usually not represented by linear models.
-    non_lin = fc.c3(values, lag=20)
+    non_lin = fc.c3(values, lag=period)
     # Measures symmetry, or more precisely, the lack of symmetry.
     skewness = fc.skewness(values)
     # Measures if the data are peaked or flat, relative to a normal distribution
@@ -111,13 +116,13 @@ def periodicity_analysis(data_, dataset='', datatype=''):
 
 
 def full_analyzis(data_train):
-    c22 = Catch22()
-    data_train['value'] = data_train['value'].apply(lambda x: np.array([x]))
-    c22.fit(data_train[['value']], data_train['is_anomaly'])
-    transformed_data = c22.transform(data_train[['value']])
-
-    print(transformed_data.head())
-    transformed_data.to_csv(f'results/ts_properties/test_filtered_features_c22.csv')
+    # c22 = Catch22()
+    # data_train['value'] = data_train['value'].apply(lambda x: np.array([x]))
+    # c22.fit(data_train[['value']], data_train['is_anomaly'])
+    # transformed_data = c22.transform(data_train[['value']])
+    #
+    # print(transformed_data.head())
+    # transformed_data.to_csv(f'results/ts_properties/test_filtered_features_c22.csv')
     ####################################################################################################################
 
     transformer = TSFreshFeatureExtractor(default_fc_parameters="efficient")
@@ -146,3 +151,111 @@ def full_analyzis(data_train):
     # print(relevance_table.sort_values('p_value', ascending=False)[:11])
 
     quit()
+
+
+# CATCH 22 analysis
+def analyse_dataset_catch22(dataset, root_path):
+    df = pd.DataFrame([])
+    idx = 0
+    data_path = root_path + '/datasets/' + dataset[0] + '/' + dataset[1] + '/'
+    for filename in os.listdir(data_path):
+        f = os.path.join(data_path, filename)
+        if os.path.isfile(f):
+            print(filename)
+            data = pd.read_csv(f)
+            res = catch22_all(data['value'].tolist())
+            print(res)
+            df.loc[idx, 'ts'] = filename
+            for name, val in zip(res['names'], res['values']):
+                df.loc[idx, name] = val
+            idx += 1
+            df.to_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_c22.csv')
+
+    # for filename in os.listdir(data_path):
+    #     f = os.path.join(data_path, filename)
+    #     if os.path.isfile(f):
+    #         print(filename)
+    #         data = pd.read_csv(f)
+    #         if len(ts_set) != 0:
+    #             ts_set.append([[x] for x in data['value'].to_list()][:sz])
+    #             # y = np.append(y, data['is_anomaly'].to_numpy(), axis=1)
+    #         else:
+    #             ts_set = [[[x] for x in data['value'].to_list()[:sz]]]
+    #             # y = np.array(data['is_anomaly'].to_numpy())
+    #
+    # ts_set = np.array(ts_set)
+    # c22 = Catch22()
+    # c22.fit(ts_set)
+    # transformed_data = c22.transform(ts_set)
+    #
+    # print(transformed_data.head())
+    # transformed_data.to_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_c22.csv')
+
+
+# Hyndman analysis
+# def series_analysis_fforma(data):
+#
+#     period = periodicity_analysis(data)
+#     values = data['value']
+#
+#     seasonality = seasonal_decompose(values.interpolate(), period=period).seasonal
+#     X_train_df, y_train_df, X_test_df, y_test_df = prepare_m4_data(dataset, './data', 100)
+#
+#     y_holdout_train_df, y_val_df = temp_holdout(y_train_df, validation_periods)
+#     features = tsfeatures(y_holdout_train_df, seasonality)
+#
+#     print(features)
+
+
+def compare_dataset_properties():
+    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
+    idx = 0
+    for feature in features:
+        print(feature)
+        if feature not in ['ts', 'Unnamed: 0']:
+            transform_full = pd.DataFrame([])
+
+            for dataset in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
+                        ('NAB', 'relevant'), ('kpi', 'train')]:
+
+                data = pd.read_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_c22.csv')
+                transform = pd.DataFrame([])
+                transform[feature] = data[feature]
+                transform['Dataset'] = dataset[0] + '_' + dataset[1] if dataset[0] != 'yahoo' else dataset[1]
+                transform_full = pd.concat([transform_full, transform])
+
+            sns.stripplot(x="Dataset", y=feature, data=transform_full, zorder=1)
+            labels = [e.get_text() for e in pyplot.gca().get_xticklabels()]
+            ticks = pyplot.gca().get_xticks()
+            w = 0.1
+            for idx, datas in enumerate(labels):
+                idx = labels.index(datas)
+                pyplot.hlines(transform_full[transform_full['Dataset'] == datas][feature].mean(), ticks[idx] - w,
+                              ticks[idx] + w, color='k', linestyles='solid', linewidth=3.0, zorder=2)
+
+            pyplot.savefig(f'results/ts_properties/imgs/{feature}_c22.png')
+            pyplot.clf()
+
+
+def calculate_was_dist():
+    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
+    df = pd.DataFrame([])
+    idx = 0
+    dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
+           ('NAB', 'relevant'), ('kpi', 'train')]
+    for feature in features:
+        print(feature)
+        if feature not in ['ts', 'Unnamed: 0']:
+            for dataset1 in dfs:
+                data1 = pd.read_csv(f'results/ts_properties/{dataset1[0]}_{dataset1[1]}_features_c22.csv')
+                for dataset2 in dfs[dfs.index(dataset1):]:
+                    if dataset1 != dataset2:
+                        data2 = pd.read_csv(f'results/ts_properties/{dataset2[0]}_{dataset2[1]}_features_c22.csv')
+                        wdist = wasserstein_distance(data1[feature].tolist(), data2[feature].tolist())
+                        df.loc[idx, 'feature'] = feature
+                        df.loc[idx, 'dataset1'] = dataset1[0] + '_' + dataset1[1]
+                        df.loc[idx, 'dataset2'] = dataset2[0] + '_' + dataset2[1]
+                        df.loc[idx, 'distance'] = wdist
+                        idx += 1
+
+    df.to_csv(f'results/ts_properties/features_was_dist_c22.csv')

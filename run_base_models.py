@@ -29,7 +29,8 @@ from statsmodels.tsa._stl import STL
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from analysis.preanalysis import visualize, series_analysis, periodicity_analysis
+from analysis.preanalysis import visualize, series_analysis, periodicity_analysis, full_analyzis, \
+    analyse_dataset_catch22, compare_dataset_properties, calculate_was_dist
 from analysis.postanalysis import confusion_visualization, weighted_f_score
 from analysis.time_series_feature_analysis import analyse_series_properties
 from models.nets import LSTM_autoencoder, Vae, SeqSeq
@@ -59,11 +60,11 @@ models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, [], []),
           # don't scale novelty=True
-          # 'dbscan': (DBSCAN,
-          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-          #            Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-          #                        'nan_euclidean', dtw], name='metric')],
-          #            [1, 2, dtw]),
+          'dbscan': (DBSCAN,
+                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+                     Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+                                 'nan_euclidean', dtw], name='metric')],
+                     [1, 2, dtw]),
           # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
           #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
           # 'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
@@ -96,8 +97,8 @@ models = {
           #                           Integer(low=1, high=100, name='sensitivity')],
           #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
-          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-                     [1.15, 1.15]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+          #            [1.15, 1.15]),
           # 'ensemble': (Ensemble, [], []),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
@@ -439,15 +440,15 @@ def fit_base_model(model_params, for_optimization=True):
             tn, fp, fn, tp = None, None, None, None
 
         try:
-            trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
+            trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov, tf = \
                 series_analysis(data)
         except:
                 try:
-                    trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
+                    trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov, tf = \
                         series_analysis(data[:25000])
                 except:
-                    trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov = \
-                        None, None, None, None, None, None, None, None
+                    trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov, tf = \
+                        None, None, None, None, None, None, None, None, pd.DataFrame([])
         stats = stats.append({
             'model': name,
             'dataset': filename.replace('.csv', ''),
@@ -472,25 +473,31 @@ def fit_base_model(model_params, for_optimization=True):
             'total_points': data_test.shape[0]
         }, ignore_index=True)
         stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
+        tf.to_csv(f'results/{dataset}_{type}_{filename.replace(".csv", "")}_full_stats.csv', index=False)
 
     return 1.0 - met_total[2]
 
 
 if __name__ == '__main__':
-    preprocess_nab_labels(root_path)
+    # compare_dataset_properties()
+    calculate_was_dist()
+    quit()
+    # preprocess_nab_labels(root_path)
 
     deseasonalize = False
     dataset, type = 'yahoo', 'A4Benchmark'
-    for dataset, type in [('NAB', 'relevant')]:
+    for dataset, type in [('yahoo', 'real'), ('NAB', 'relevant'), ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
+                          ('yahoo', 'A3Benchmark'),
+                          ('yahoo', 'synthetic')]:
         #[('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark'), ('kpi', 'train')]:
         for name, (model, bo_space, def_params) in models.items():
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
             for filename in os.listdir(train_data_path):
                 f = os.path.join(train_data_path, filename)
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
-                if os.path.isfile(f) and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
+                if os.path.isfile(f):# and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
                     print(f"Training model {name} with data {filename}")
-                    data = pd.read_csv(f)
+                    data = pd.read_csv(f) #[-10000:]
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
 
                     if deseasonalize:
@@ -520,7 +527,12 @@ if __name__ == '__main__':
                     except Exception as e:
                         print(f'Error on {filename}')
 
+                    quit()
+
+            time.sleep(300)
             analyse_series_properties(dataset, type, name)
+            time.sleep(300)
+
             # try:
             #     stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
             #     stats = stats.append({

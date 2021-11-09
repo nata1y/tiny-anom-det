@@ -202,3 +202,6 @@ def preprocess_telemanom_datatset(root_path_save):
 
                 pd_data = pd.DataFrame(data)
                 pd_data.to_csv(root_path_save + f'/datasets/telemanom/{tp}/' + filename.split('.')[0] + '.csv')
+
+
+
