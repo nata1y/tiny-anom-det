@@ -1,4 +1,5 @@
 import copy
+import itertools
 import os
 
 import scipy
@@ -259,3 +260,42 @@ def calculate_was_dist():
                         idx += 1
 
     df.to_csv(f'results/ts_properties/features_was_dist_c22.csv')
+
+
+def was_dist_between_sets():
+    dists_p_f = pd.read_csv(f'results/ts_properties/features_was_dist_c22.csv')
+    df = pd.DataFrame([])
+    dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
+           ('NAB', 'relevant'), ('kpi', 'train')]
+    dists = itertools.combinations(dfs, 2)
+
+    idx = 0
+    for s in list(dists):
+        s1, s2 = s
+        df.loc[idx, 'from'] = s1[0] + '_' + s1[1]
+        df.loc[idx, 'to'] = s2[0] + '_' + s2[1]
+        df.loc[idx, 'norm_sum_wdist'] = 0.0
+        idx += 1
+
+    for feature in dists_p_f['feature'].unique().tolist():
+        print(feature)
+        snippest = dists_p_f[dists_p_f['feature'] == feature].reset_index()
+        mval = np.max(snippest['distance'].tolist())
+        idx = 0
+        dists = itertools.combinations(dfs, 2)
+
+        for s in dists:
+            s1, s2 = s
+            sub1 = snippest[snippest['dataset1'] == s1[0] + '_' + s1[1]]
+            sub2 = snippest[snippest['dataset1'] == s2[0] + '_' + s2[1]]
+            sub1 = sub1[sub1['dataset2'] == s2[0] + '_' + s2[1]]
+            sub2 = sub2[sub2['dataset2'] == s1[0] + '_' + s1[1]]
+            if sub1.shape[0] > 0:
+                val = sub1['distance'].tolist()[0]
+            else:
+                val = sub2['distance'].tolist()[0]
+
+            df.loc[idx, 'norm_sum_wdist'] = df.loc[idx, 'norm_sum_wdist'] + val / mval
+            idx += 1
+
+    df.to_csv(f'results/ts_properties/dataset_was_dist_c22.csv')
