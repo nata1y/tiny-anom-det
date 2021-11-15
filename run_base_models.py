@@ -30,7 +30,7 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 from analysis.preanalysis import visualize, series_analysis, periodicity_analysis, full_analyzis, \
-    analyse_dataset_catch22, compare_dataset_properties, calculate_was_dist
+    analyse_dataset_catch22, compare_dataset_properties, calculate_was_dist, was_dist_between_sets
 from analysis.postanalysis import confusion_visualization, weighted_f_score
 from analysis.time_series_feature_analysis import analyse_series_properties
 from models.nets import LSTM_autoencoder, Vae, SeqSeq
@@ -481,6 +481,7 @@ def fit_base_model(model_params, for_optimization=True):
 if __name__ == '__main__':
     # compare_dataset_properties()
     calculate_was_dist()
+    # was_dist_between_sets()
     quit()
     # preprocess_nab_labels(root_path)
 

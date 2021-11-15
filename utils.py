@@ -204,4 +204,8 @@ def preprocess_telemanom_datatset(root_path_save):
                 pd_data.to_csv(root_path_save + f'/datasets/telemanom/{tp}/' + filename.split('.')[0] + '.csv')
 
 
+def KL(a, b):
+    a = np.asarray(a, dtype=np.float)
+    b = np.asarray(b, dtype=np.float)
 
+    return np.sum(np.where(a != 0, a * np.log(a / b), 0))
