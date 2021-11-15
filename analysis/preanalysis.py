@@ -12,6 +12,7 @@ from scipy.interpolate import splrep
 from scipy.stats import wasserstein_distance
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import MinMaxScaler
 from sktime.transformations.panel.tsfresh import TSFreshFeatureExtractor
 from statsmodels.tsa.seasonal import seasonal_decompose
 import tsfresh.feature_extraction.feature_calculators as fc
@@ -27,7 +28,8 @@ from tsfresh.utilities.dataframe_functions import impute
 from catch22 import catch22_all
 import seaborn as sns
 # from utils import handle_missing_values_kpi
-from utils import KL
+from utils import KL, intersection, fidelity, sq_euclidian
+import dictances
 
 
 def visualize(data):
@@ -242,7 +244,7 @@ def compare_dataset_properties():
             pyplot.clf()
 
 
-def calculate_was_dist():
+def calculate_dists():
     random.seed(30)
     features = pd.read_csv(f'results/ts_properties/yahoo_real_features_fforma.csv').columns
     df = pd.DataFrame([])
@@ -272,33 +274,37 @@ def calculate_was_dist():
                             d2 = random.sample(data2[feature].tolist(), l)
                             d1 = data1[feature].tolist()
 
+                        scaler = MinMaxScaler()
+                        d1 = list(scaler.fit_transform(np.asarray(d1).reshape(-1, 1)).flatten())
+                        scaler = MinMaxScaler()
+                        d2 = list(scaler.fit_transform(np.asarray(d2).reshape(-1, 1)).flatten())
+
                         wdist = wasserstein_distance(d1, d2)
-                        print(wdist)
                         edist = np.linalg.norm(np.asarray(d1) - np.asarray(d2))
-                        print(edist)
                         sdist = distance.sorensen(d1, d2)
-                        print(sdist)
                         kldist = KL(d1, d2)
-                        print(kldist)
                         ipdist = np.inner(np.asarray(d1), np.asarray(d2))
-                        print(ipdist)
+                        fdist = fidelity(d1, d2)
+                        sedist = sq_euclidian(d1, d2)
+                        idist = intersection(d1, d1)
 
-                        # TODO: squared euclidian, fidelity, intersection
-
-                        # fdist = distance.
-                        # sedist = np.linalg.norm(data1[feature].tolist() - data2[feature].tolist())
-                        # print(edist)
-                        quit()
                         df.loc[idx, 'feature'] = feature
                         df.loc[idx, 'dataset1'] = dataset1[0] + '_' + dataset1[1]
                         df.loc[idx, 'dataset2'] = dataset2[0] + '_' + dataset2[1]
-                        df.loc[idx, 'distance'] = wdist
+                        df.loc[idx, 'distance_wasserstein'] = wdist
+                        df.loc[idx, 'distance_euclidian'] = edist
+                        df.loc[idx, 'distance_sorensen'] = sdist
+                        df.loc[idx, 'distance_kl'] = kldist
+                        df.loc[idx, 'distance_inner_prod'] = ipdist
+                        df.loc[idx, 'distance_fidelity'] = fdist
+                        df.loc[idx, 'distance_intersection'] = idist
+                        df.loc[idx, 'distance_squared_euclidian'] = sedist
                         idx += 1
 
-    # df.to_csv(f'results/ts_properties/features_was_dist_fforma.csv')
+    df.to_csv(f'results/ts_properties/features_was_dist_fforma.csv')
 
 
-def was_dist_between_sets():
+def dist_between_sets():
     dists_p_f = pd.read_csv(f'results/ts_properties/features_was_dist_fforma.csv')
     df = pd.DataFrame([])
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
@@ -310,33 +316,40 @@ def was_dist_between_sets():
         s1, s2 = s
         df.loc[idx, 'from'] = s1[0] + '_' + s1[1]
         df.loc[idx, 'to'] = s2[0] + '_' + s2[1]
-        df.loc[idx, 'norm_sum_wdist'] = 0.0
+        df.loc[idx, 'norm_sum_wasserstein'] = 0.0
+        df.loc[idx, 'norm_sum_euclidian'] = 0.0
+        df.loc[idx, 'norm_sum_sorensen'] = 0.0
+        df.loc[idx, 'norm_sum_kl'] = 0.0
+        df.loc[idx, 'norm_sum_inner_prod'] = 0.0
+        df.loc[idx, 'norm_sum_fidelity'] = 0.0
+        df.loc[idx, 'norm_sum_intersection'] = 0.0
+        df.loc[idx, 'norm_sum_squared_euclidian'] = 0.0
         idx += 1
 
     for feature in dists_p_f['feature'].unique().tolist():
         print(feature)
-        snippest = dists_p_f[dists_p_f['feature'] == feature].reset_index()
-        mval = np.max(snippest['distance'].tolist())
-        if mval == 0.0:
-            mval = 0.00000001
-        idx = 0
-        dists = itertools.combinations(dfs, 2)
+        for dist in ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                     'intersection', 'squared_euclidian']:
+            snippest = dists_p_f[dists_p_f['feature'] == feature].reset_index()
+            mval = np.max(snippest['distance_' + dist].tolist())
+            if mval == 0.0:
+                mval = 0.00000001
+            idx = 0
+            dists = itertools.combinations(dfs, 2)
 
-        for s in dists:
-            s1, s2 = s
-            val = 0.0
-            sub1 = snippest[snippest['dataset1'] == s1[0] + '_' + s1[1]]
-            sub2 = snippest[snippest['dataset1'] == s2[0] + '_' + s2[1]]
-            sub1 = sub1[sub1['dataset2'] == s2[0] + '_' + s2[1]]
-            sub2 = sub2[sub2['dataset2'] == s1[0] + '_' + s1[1]]
-            if sub1.shape[0] > 0:
-                val = sub1['distance'].tolist()[0]
-            elif sub2.shape[0] > 0:
-                val = sub2['distance'].tolist()[0]
+            for s in dists:
+                s1, s2 = s
+                val = 0.0
+                sub1 = snippest[snippest['dataset1'] == s1[0] + '_' + s1[1]]
+                sub2 = snippest[snippest['dataset1'] == s2[0] + '_' + s2[1]]
+                sub1 = sub1[sub1['dataset2'] == s2[0] + '_' + s2[1]]
+                sub2 = sub2[sub2['dataset2'] == s1[0] + '_' + s1[1]]
+                if sub1.shape[0] > 0:
+                    val = sub1['distance_' + dist].tolist()[0]
+                elif sub2.shape[0] > 0:
+                    val = sub2['distance_' + dist].tolist()[0]
 
-            df.loc[idx, 'norm_sum_wdist'] = df.loc[idx, 'norm_sum_wdist'] + val / mval
-            idx += 1
-
-        print(df.loc[idx, 'norm_sum_wdist'])
+                df.loc[idx, 'norm_sum_' + dist] = df.loc[idx, 'norm_sum_' + dist] + val / mval
+                idx += 1
 
     df.to_csv(f'results/ts_properties/dataset_was_dist_fforma.csv')

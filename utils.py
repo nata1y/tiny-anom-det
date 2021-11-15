@@ -1,4 +1,5 @@
 import json
+from math import sqrt
 
 import numpy as np
 import os
@@ -209,3 +210,30 @@ def KL(a, b):
     b = np.asarray(b, dtype=np.float)
 
     return np.sum(np.where(a != 0, a * np.log(a / b), 0))
+
+
+def intersection(a, b):
+    d = 0.0
+    for i, j in zip(a, b):
+        d += min(i, j)
+
+    return d
+
+
+def fidelity(a, b):
+    d = 0.0
+    for i, j in zip(a, b):
+        try:
+            d += sqrt(i * j)
+        except:
+            pass
+
+    return d
+
+
+def sq_euclidian(a, b):
+    d = 0.0
+    for i, j in zip(a, b):
+        d += (i - j) ** 2
+
+    return d
