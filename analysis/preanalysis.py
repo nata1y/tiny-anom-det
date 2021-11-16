@@ -246,7 +246,7 @@ def compare_dataset_properties():
 
 def calculate_dists():
     random.seed(30)
-    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_fforma.csv').columns
+    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
     df = pd.DataFrame([])
     idx = 0
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
@@ -257,33 +257,28 @@ def calculate_dists():
         if feature not in exclude:
             print(feature)
             for dataset1 in dfs:
-                data1 = pd.read_csv(f'results/ts_properties/{dataset1[0]}_{dataset1[1]}_features_fforma.csv')
+                data1 = pd.read_csv(f'results/ts_properties/{dataset1[0]}_{dataset1[1]}_features_c22.csv')
                 data1.fillna(0.0, inplace=True)
                 for dataset2 in dfs[dfs.index(dataset1):]:
                     if dataset1 != dataset2:
-                        data2 = pd.read_csv(f'results/ts_properties/{dataset2[0]}_{dataset2[1]}_features_fforma.csv')
+                        data2 = pd.read_csv(f'results/ts_properties/{dataset2[0]}_{dataset2[1]}_features_c22.csv')
                         data2.fillna(0.0, inplace=True)
 
-                        # sample longer distribution
-                        if len(data1[feature].tolist()) > len(data2[feature].tolist()):
-                            l = len(data2[feature].tolist())
-                            d1 = random.sample(data1[feature].tolist(), l)
-                            d2 = data2[feature].tolist()
-                        else:
-                            l = len(data1[feature].tolist())
-                            d2 = random.sample(data2[feature].tolist(), l)
-                            d1 = data1[feature].tolist()
+                        d1, d2 = data1[feature].to_numpy(), data2[feature].to_numpy()
 
                         scaler = MinMaxScaler()
-                        d1 = list(scaler.fit_transform(np.asarray(d1).reshape(-1, 1)).flatten())
+                        d1 = list(scaler.fit_transform(d1.reshape(-1, 1)).flatten())
                         scaler = MinMaxScaler()
-                        d2 = list(scaler.fit_transform(np.asarray(d2).reshape(-1, 1)).flatten())
+                        d2 = list(scaler.fit_transform(d2.reshape(-1, 1)).flatten())
+
+                        d1, _ = np.histogram(d1, bins=100)
+                        d2, _ = np.histogram(d2, bins=100)
 
                         wdist = wasserstein_distance(d1, d2)
-                        edist = np.linalg.norm(np.asarray(d1) - np.asarray(d2))
+                        edist = np.linalg.norm(d1 - d2)
                         sdist = distance.sorensen(d1, d2)
                         kldist = KL(d1, d2)
-                        ipdist = np.inner(np.asarray(d1), np.asarray(d2))
+                        ipdist = np.inner(d1, d2)
                         fdist = fidelity(d1, d2)
                         sedist = sq_euclidian(d1, d2)
                         idist = intersection(d1, d1)
@@ -301,11 +296,11 @@ def calculate_dists():
                         df.loc[idx, 'distance_squared_euclidian'] = sedist
                         idx += 1
 
-    df.to_csv(f'results/ts_properties/features_was_dist_fforma.csv')
+    df.to_csv(f'results/ts_properties/features_was_dist_c22.csv')
 
 
 def dist_between_sets():
-    dists_p_f = pd.read_csv(f'results/ts_properties/features_was_dist_fforma.csv')
+    dists_p_f = pd.read_csv(f'results/ts_properties/features_was_dist_c22.csv')
     df = pd.DataFrame([])
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
            ('NAB', 'relevant'), ('kpi', 'train')]
@@ -352,4 +347,24 @@ def dist_between_sets():
                 df.loc[idx, 'norm_sum_' + dist] = df.loc[idx, 'norm_sum_' + dist] + val / mval
                 idx += 1
 
-    df.to_csv(f'results/ts_properties/dataset_was_dist_fforma.csv')
+    df.to_csv(f'results/ts_properties/dataset_was_dist_c22.csv')
+
+
+# compare orderings via different distance measures
+def compare_dataset_distances():
+    for features in ['fforma', 'c22']:
+        df = pd.DataFrame([], columns=['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                                       'intersection', 'squared_euclidian', 'distance_name'])
+        df['distance_name'] = ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                               'intersection', 'squared_euclidian']
+        df.set_index('distance_name', inplace=True)
+        data = pd.read_csv(f'results/ts_properties/dataset_was_dist_{features}.csv')
+        for dist in ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                     'intersection', 'squared_euclidian']:
+            for dist2 in ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                           'intersection', 'squared_euclidian']:
+                print(data)
+                tau, p_value = stats.kendalltau(data['norm_sum_' + dist], data['norm_sum_' + dist2])
+                df.loc[dist, dist2] = tau
+
+        df.to_csv(f'results/ts_properties/ranking_similarities_via_dists_{features}.csv')
