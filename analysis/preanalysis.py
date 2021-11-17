@@ -9,8 +9,9 @@ import tsfresh
 from matplotlib import pyplot
 from pandas.plotting import autocorrelation_plot
 from scipy.interpolate import splrep
-from scipy.stats import wasserstein_distance
+from scipy.stats import wasserstein_distance, kstest
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.feature_selection import VarianceThreshold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import MinMaxScaler
 from sktime.transformations.panel.tsfresh import TSFreshFeatureExtractor
@@ -368,3 +369,87 @@ def compare_dataset_distances():
                 df.loc[dist, dist2] = tau
 
         df.to_csv(f'results/ts_properties/ranking_similarities_via_dists_{features}.csv')
+
+
+# Compare per-feature distributions to each other in different datset - are they drown fom the same distribution?
+def compare_feature_samples_from_same_dist():
+    random.seed(30)
+    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
+    df = pd.DataFrame([])
+    idx = 0
+    dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
+           ('NAB', 'relevant'), ('kpi', 'train')]
+    exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
+
+    for feature in features:
+        if feature not in exclude:
+            print(feature)
+            for dataset1 in dfs:
+                data1 = pd.read_csv(f'results/ts_properties/{dataset1[0]}_{dataset1[1]}_features_c22.csv')
+                data1.fillna(0.0, inplace=True)
+                for dataset2 in dfs[dfs.index(dataset1):]:
+                    if dataset1 != dataset2:
+                        data2 = pd.read_csv(f'results/ts_properties/{dataset2[0]}_{dataset2[1]}_features_c22.csv')
+                        data2.fillna(0.0, inplace=True)
+
+                        d1, d2 = data1[feature].to_numpy(), data2[feature].to_numpy()
+
+                        ks_stats = kstest(d1, d2)
+
+                        df.loc[idx, 'feature'] = feature
+                        df.loc[idx, 'dataset1'] = dataset1[0] + '_' + dataset1[1]
+                        df.loc[idx, 'dataset2'] = dataset2[0] + '_' + dataset2[1]
+                        df.loc[idx, 'KS_p_val'] = ks_stats[0]
+                        if df.loc[idx, 'KS_p_val'] < 0.05:
+                            df.loc[idx, 'from_same_dist'] = False
+                        else:
+                            df.loc[idx, 'from_same_dist'] = True
+                        idx += 1
+
+    df.to_csv(f'results/ts_properties/datasets_features_KS_stats.csv')
+
+
+# Compare per-feature distributions to ones in UCR (large) dataset - are they drown fom the same distribution?
+def check_dist_sample():
+    df = pd.read_csv(f'results/ts_properties/ucr_ts_features_c22.csv')
+    transform = pd.DataFrame([])
+    idx = 0
+    for dataset in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'),
+                    ('yahoo', 'A4Benchmark'),
+                    ('NAB', 'relevant'), ('kpi', 'train')]:
+        transform.loc[idx, 'Dataset'] = dataset[0] + '_' + dataset[1] if dataset[0] != 'yahoo' else dataset[1]
+        for feature in df.columns:
+            if feature not in ['ts', 'Unnamed: 0']:
+                data = pd.read_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_c22.csv')
+                transform.loc[idx, 'KS_p_val'] = kstest(df[feature].to_numpy(), data[feature].to_numpy())[0]
+                # Here we reject null hypothesis that 2 samples came from the same distribution if p val < 0.05
+                if transform.loc[idx, 'KS_p_val'] < 0.05:
+                    transform.loc[idx, 'from_same_dist'] = False
+                else:
+                    transform.loc[idx, 'from_same_dist'] = True
+            idx += 1
+
+        df.to_csv(f'results/ts_properties/datasets_to_ucr_c22_features_KS_stats.csv')
+
+
+# For every dataset, we take its per- TS features and see their variance.
+# Catch22 assumes that all features are important and are PC, so if we have features with low variance within dataset
+# it might indicate that it is not representative from the point of view of that feature
+def check_low_variance_features():
+    random.seed(30)
+    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
+    df = pd.DataFrame([])
+    idx = 0
+    dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
+           ('NAB', 'relevant'), ('kpi', 'train')]
+    exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
+
+    for dataset1 in dfs:
+        data1 = pd.read_csv(f'results/ts_properties/{dataset1[0]}_{dataset1[1]}_features_c22.csv')
+        data1.fillna(0.0, inplace=True)
+        fs = [f for f in data1.columns if f not in exclude]
+        features = data1[fs]
+        vt = VarianceThreshold()
+        vt.fit_transform(features.to_numpy())
+        for f, v in zip(features, vt.variances_):
+            print(f'{f} has variance of {v}')

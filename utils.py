@@ -5,6 +5,9 @@ import numpy as np
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import scipy
+from catch22 import catch22_all
+from scipy.stats import kstest
 from skopt.callbacks import EarlyStopper
 
 
@@ -237,3 +240,33 @@ def sq_euclidian(a, b):
         d += (i - j) ** 2
 
     return d
+
+
+def load_ucr_ts():
+    data_path = 'datasets/ucr_ts/'
+    df = pd.DataFrame([])
+    idx = 0
+    for dirname in os.listdir(data_path):
+        d = os.path.join(data_path, dirname)
+        if not os.path.isfile(d):
+            print(f"Processing ts {d}")
+            for filename in os.listdir(d):
+                print(filename)
+                f = os.path.join(d, filename)
+                if os.path.isfile(f) and '_TRAIN.txt' in str(filename):
+                    my_file = open(f, "r")
+                    content = my_file.read()
+                    idx2 = 0
+                    for ts in content.split('\n'):
+                        data = [float(e) for e in ts.replace('\n', '').split(" ") if e != '']
+                        if data:
+                            print(data)
+                            res = catch22_all(data)
+                            print(res)
+                            df.loc[idx, 'ts'] = filename + str(idx2)
+                            idx2 += 1
+                            for name, val in zip(res['names'], res['values']):
+                                df.loc[idx, name] = val
+                            idx += 1
+                            df.to_csv(f'results/ts_properties/ucr_ts_features_c22.csv')
+                    my_file.close()
