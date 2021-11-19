@@ -215,33 +215,47 @@ def analyse_dataset_catch22(dataset, root_path):
 
 
 def compare_dataset_properties():
-    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_fforma.csv').columns
-    idx = 0
+    features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
+    idxs = {
+        'real': 0,
+        'synthetic': 1,
+        'A3Benchmark': 2,
+        'A4Benchmark': 3,
+        'NAB': 4,
+        'kpi': 5
+    }
     for feature in features:
         print(feature)
         if feature not in ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta',
                            'hw_gamma']:
             transform_full = pd.DataFrame([])
-
+            max_ucr = pd.read_csv(f'results/ts_properties/ucr_ts_features_c22.csv')[feature].max()
+            print(max_ucr)
             for dataset in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
-                        ('NAB', 'relevant'), ('kpi', 'train')]:
+                        ('NAB', 'relevant'), ('kpi', 'train'), ('ucr', 'ts')]:
 
-                data = pd.read_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_fforma.csv')
+                data = pd.read_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_c22.csv')
                 transform = pd.DataFrame([])
                 transform[feature] = data[feature]
-                transform['Dataset'] = dataset[0] + '_' + dataset[1] if dataset[0] != 'yahoo' else dataset[1]
+                transform['Dataset'] = dataset[0] if dataset[0] != 'yahoo' else dataset[1]
+                transform['ts'] = data['ts']
                 transform_full = pd.concat([transform_full, transform])
 
-            sns.stripplot(x="Dataset", y=feature, data=transform_full, zorder=1)
+            ax = sns.stripplot(x="Dataset", y=feature, data=transform_full, zorder=2)
             labels = [e.get_text() for e in pyplot.gca().get_xticklabels()]
             ticks = pyplot.gca().get_xticks()
             w = 0.1
             for idx, datas in enumerate(labels):
                 idx = labels.index(datas)
                 pyplot.hlines(transform_full[transform_full['Dataset'] == datas][feature].mean(), ticks[idx] - w,
-                              ticks[idx] + w, color='k', linestyles='solid', linewidth=3.0, zorder=2)
+                              ticks[idx] + w, color='k', linestyles='solid', linewidth=3.0, zorder=3)
 
-            pyplot.savefig(f'results/ts_properties/imgs/{feature}_fforma.png')
+            outliers = transform_full[transform_full[feature] > max_ucr]
+            for ds in ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark', 'NAB', 'kpi']:
+                for idx, row in list(outliers[outliers['Dataset'] == ds].sort_values(feature, ascending=False).iterrows())[:2]:
+                    ax.text(idxs[row['Dataset']] - 1, row[feature] + .5, row['ts'].split('.')[0], size='xx-small')
+
+            pyplot.savefig(f'results/ts_properties/imgs/{feature}_c22_ucr_outliers.png')
             pyplot.clf()
 
 
@@ -371,7 +385,7 @@ def compare_dataset_distances():
         df.to_csv(f'results/ts_properties/ranking_similarities_via_dists_{features}.csv')
 
 
-# Compare per-feature distributions to each other in different datset - are they drown fom the same distribution?
+# Compare per-feature distributions to each other in different datsetse - are they drown fom the same distribution?
 def compare_feature_samples_from_same_dist():
     random.seed(30)
     features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
@@ -417,9 +431,10 @@ def check_dist_sample():
     for dataset in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'),
                     ('yahoo', 'A4Benchmark'),
                     ('NAB', 'relevant'), ('kpi', 'train')]:
-        transform.loc[idx, 'Dataset'] = dataset[0] + '_' + dataset[1] if dataset[0] != 'yahoo' else dataset[1]
         for feature in df.columns:
-            if feature not in ['ts', 'Unnamed: 0']:
+            if feature not in ['ts', 'Unnamed: 0', 'Unnamed: 0.1']:
+                transform.loc[idx, 'Dataset'] = dataset[0] + '_' + dataset[1] if dataset[0] != 'yahoo' else dataset[1]
+                transform.loc[idx, 'feature'] = feature
                 data = pd.read_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_c22.csv')
                 transform.loc[idx, 'KS_p_val'] = kstest(df[feature].to_numpy(), data[feature].to_numpy())[0]
                 # Here we reject null hypothesis that 2 samples came from the same distribution if p val < 0.05
@@ -427,9 +442,9 @@ def check_dist_sample():
                     transform.loc[idx, 'from_same_dist'] = False
                 else:
                     transform.loc[idx, 'from_same_dist'] = True
-            idx += 1
+                idx += 1
 
-        df.to_csv(f'results/ts_properties/datasets_to_ucr_c22_features_KS_stats.csv')
+        transform.to_csv(f'results/ts_properties/datasets_to_ucr_c22_features_KS_stats.csv')
 
 
 # For every dataset, we take its per- TS features and see their variance.
@@ -437,11 +452,12 @@ def check_dist_sample():
 # it might indicate that it is not representative from the point of view of that feature
 def check_low_variance_features():
     random.seed(30)
+    res = pd.DataFrame([])
     features = pd.read_csv(f'results/ts_properties/yahoo_real_features_c22.csv').columns
     df = pd.DataFrame([])
     idx = 0
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
-           ('NAB', 'relevant'), ('kpi', 'train')]
+           ('NAB', 'relevant'), ('kpi', 'train'), ('ucr', 'ts')]
     exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
 
     for dataset1 in dfs:
@@ -449,7 +465,18 @@ def check_low_variance_features():
         data1.fillna(0.0, inplace=True)
         fs = [f for f in data1.columns if f not in exclude]
         features = data1[fs]
-        vt = VarianceThreshold()
-        vt.fit_transform(features.to_numpy())
-        for f, v in zip(features, vt.variances_):
-            print(f'{f} has variance of {v}')
+        for f in fs:
+            print(f)
+            scaler = MinMaxScaler()
+            features_norm = scaler.fit_transform(features[[f]].to_numpy())
+
+            # we need variance of ALL features
+            vt = VarianceThreshold(threshold=-.1)
+            vt.fit(features_norm)
+            print(f'{f} has variance of {vt.variances_[0]}')
+            res.loc[idx, 'dataset'] = dataset1[0] + '_' + dataset1[1]
+            res.loc[idx, 'feature'] = f
+            res.loc[idx, 'variance'] = vt.variances_[0]
+            idx += 1
+
+        res.to_csv(f'results/ts_properties/variances_of_c22_features_withinn_datasets.csv')

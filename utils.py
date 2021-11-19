@@ -14,7 +14,7 @@ from skopt.callbacks import EarlyStopper
 class Stopper(EarlyStopper):
     def __call__(self, result):
         ret = False
-        if result.func_vals[-1] == 1.0:
+        if result.func_vals[-1] == 0.0:
             ret = True
         return ret
 
@@ -115,37 +115,6 @@ def handle_missing_values_kpi(data, start=None):
     return data
 
 
-def merge_model_performance():
-    train_df = None
-    for tp in ['real', 'synthetic']:
-        dbscan = pd.read_csv(f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_{tp}_stats_dbscan.csv')
-        lstm = pd.read_csv(f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_{tp}_stats_lstm.csv')
-        sarima = pd.read_csv(f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_real_{tp}_sarima.csv')
-        sr = pd.read_csv(
-            f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\yahoo\win_60\\real\\yahoo_{tp}_stats_sr.csv')
-        if not train_df:
-            idx = 0
-            train_df = dbscan[['autocorrelation', 'dataset', 'hurst', 'kurtosis', 'max_lyapunov_e',	'non-linearity',
-                               'seasonality', 'skewness', 'trend']]
-        else:
-            idx = train_df.shape[0]
-            train_df = pd.concat([train_df, dbscan[['autocorrelation', 'dataset', 'hurst', 'kurtosis', 'max_lyapunov_e',
-                                                    'non-linearity', 'seasonality', 'skewness', 'trend']]])
-        pos_f1_array = {
-            0: 'dbscan',
-            1: 'lstm',
-            2: 'sarima',
-            3: 'sr'
-        }
-        for f_dbscan, f_lstm, f_sarima, f_sr in zip(dbscan['f1'], lstm['f1'], sarima['f1'], sr['f1']):
-            model_list = [f_dbscan, f_lstm, f_sarima, f_sr]
-            best_model = pos_f1_array[model_list.index(max(model_list))]
-            train_df.pos[idx, 'model_to_use'] = best_model
-            idx += 1
-
-    train_df.to_csv('ensemble_train_data.csv')
-
-
 def preprocess_nab_labels(root_path):
     with open(root_path + '/datasets/NAB/labels/combined_labels.json') as json_file:
         labels = json.load(json_file)
@@ -244,9 +213,13 @@ def sq_euclidian(a, b):
 
 def load_ucr_ts():
     data_path = 'datasets/ucr_ts/'
-    df = pd.DataFrame([])
-    idx = 0
+    df = pd.read_csv('results/ts_properties/ucr_ts_features_c22.csv')
+    idx = df.shape[0]
+    found = False
     for dirname in os.listdir(data_path):
+        if not found and dirname != 'PLAID':
+            continue
+        found = True
         d = os.path.join(data_path, dirname)
         if not os.path.isfile(d):
             print(f"Processing ts {d}")
@@ -258,7 +231,7 @@ def load_ucr_ts():
                     content = my_file.read()
                     idx2 = 0
                     for ts in content.split('\n'):
-                        data = [float(e) for e in ts.replace('\n', '').split(" ") if e != '']
+                        data = [float(e) for e in ' '.join(ts.replace('\n', '').split(",")).split(" ") if e != '']
                         if data:
                             print(data)
                             res = catch22_all(data)
@@ -270,3 +243,111 @@ def load_ucr_ts():
                             idx += 1
                             df.to_csv(f'results/ts_properties/ucr_ts_features_c22.csv')
                     my_file.close()
+
+
+def load_ts_prediction_performance():
+    train_df = pd.DataFrame([])
+    idx = 0
+    exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
+    for dataset, subsets in [('NAB', ['relevant']), ('kpi', ['train']),
+                    ('yahoo', ['real', 'A4Benchmark', 'synthetic', 'A3Benchmark'])]:
+        for tss in subsets:
+            ts_properties_c22 = pd.read_csv(f'results/ts_properties/{dataset}_{tss}_features_c22.csv').set_index('ts')
+            ts_properties_fforma = pd.read_csv(f'results/ts_properties/{dataset}_{tss}_features_fforma.csv').set_index('ts')
+            sz = 60
+            if dataset == 'kpi':
+                sz = 1024
+            dbscan = pd.read_csv(
+                f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_dbscan.csv')
+
+            try:
+                lstm = pd.read_csv(
+                f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm.csv')
+            except:
+                try:
+                    lstm = pd.read_csv(
+                    f'C:\\Users\\oxifl\\Desktop\\thesis_res\\1_no_opt_no_updt\\{dataset}\\'
+                    f'min_metrics\\win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm.csv')
+                except:
+                    lstm = pd.DataFrame([])
+                    lstm['f1'] = [0 for i in range(dbscan.shape[0])]
+
+            try:
+                sarima = pd.read_csv(
+                    f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima.csv')
+            except:
+                try:
+                    sarima = pd.read_csv(
+                    f'C:\\Users\\oxifl\\Desktop\\thesis_res\\1_no_opt_no_updt\\{dataset}\\'
+                    f'min_metrics\\win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima.csv')
+                except:
+                    sarima = pd.DataFrame([])
+                    sarima['f1'] = [0 for i in range(dbscan.shape[0])]
+
+            sr = pd.read_csv(
+                f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sr.csv')
+
+            pos_f1_array = {
+                0: 'dbscan',
+                1: 'lstm',
+                2: 'sarima',
+                3: 'sr'
+            }
+            for f_dbscan, f_lstm, f_sarima, f_sr, ts in zip(dbscan['f1'], lstm['f1'], sarima['f1'], sr['f1'], dbscan['dataset']):
+
+                if str(ts) != 'nan' and 'flatline' not in ts:
+                    model_list = [f_dbscan, f_lstm, f_sarima, f_sr]
+                    best_model = pos_f1_array[model_list.index(max(model_list))]
+                    train_df.loc[idx, 'model_to_use'] = best_model
+                    train_df.loc[idx, 'model_f1'] = max(model_list)
+                    train_df.loc[idx, 'dataset'] = dataset + '_' + tss
+                    train_df.loc[idx, 'ts'] = ts
+                    for col in ts_properties_c22.columns:
+                        if col not in exclude:
+                            train_df.loc[idx, col] = ts_properties_c22.loc[ts + '.csv', col]
+
+                    for col in ts_properties_fforma.columns:
+                        if col not in exclude:
+                            train_df.loc[idx, col] = ts_properties_fforma.loc[ts + '.csv', col]
+                    idx += 1
+
+            train_df.to_csv('results/ensemble_train_data.csv')
+
+
+def split_ensemble_stats():
+    df = pd.read_csv('results/ensemble_train_data.csv')
+    df1 = df[df['model_f1'] >= 0.7]
+    df1.to_csv('results/all_series_can_predict.csv')
+    df2 = df[df['model_f1'] < 0.7]
+    df2.to_csv('results/all_series_cannot_predict.csv')
+
+
+def analyze_ensemble_stats():
+    import seaborn as sns
+    cor = pd.read_csv('results/all_series_can_predict.csv')
+    fail = pd.read_csv('results/all_series_cannot_predict.csv')
+    for feature in cor.columns:
+        if feature not in ['model_to_use', 'model_f1', 'dataset', 'ts']:
+            data1 = pd.DataFrame([])
+            data1[feature] = cor[feature]
+            data1['Predictability'] = 'reasonable'
+            data2 = pd.DataFrame([])
+            data2[feature] = fail[feature]
+            data2['Predictability'] = 'poor'
+            data_full = pd.concat([data1, data2], ignore_index=True)
+
+            ax = sns.stripplot(x="Predictability", y=feature, data=data_full, zorder=2)
+            labels = [e.get_text() for e in plt.gca().get_xticklabels()]
+            ticks = plt.gca().get_xticks()
+            w = 0.1
+            for idx, datas in enumerate(labels):
+                idx = labels.index(datas)
+                plt.hlines(data_full[data_full['Predictability'] == datas][feature].mean(), ticks[idx] - w,
+                              ticks[idx] + w, color='k', linestyles='solid', linewidth=3.0, zorder=3)
+
+            plt.savefig(f'results/ts_properties/imgs/{feature}_predictability_dists.png')
+            plt.clf()
