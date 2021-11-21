@@ -6,6 +6,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy
+import tensorflow
 from catch22 import catch22_all
 from scipy.stats import kstest
 from skopt.callbacks import EarlyStopper
@@ -26,6 +27,16 @@ def create_dataset(X, y, time_steps=60):
         ys.append(y.iloc[i:(i + time_steps)].values)
 
     return np.array(Xs), np.array(ys)
+
+
+def create_dataset_keras(X, y, time_steps=60):
+    print(f'{X.shape} shapeeee')
+    Xs, ys = [], []
+    for i in range(len(X) - time_steps):
+        Xs.append(X.iloc[i:(i + time_steps)].values)
+        ys.append(y.iloc[i:(i + time_steps)].values)
+
+    return tensorflow.convert_to_tensor(Xs), tensorflow.convert_to_tensor(ys)
 
 
 def adjust_range(val, oper, factor):

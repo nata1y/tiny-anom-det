@@ -180,7 +180,7 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'ensemble':
         model = Ensemble(filename=filename, anomaly_window=anomaly_window)
     elif name == 'mogaal':
-        model = MOGAAL()
+        model = MOGAAL(dataset=(dataset, type, filename))
         # need anomalies to properly train mogaal?
         if data_train['is_anomaly'].tolist().count(1) == 0:
             return
@@ -488,7 +488,7 @@ def fit_base_model(model_params, for_optimization=True):
 
 
 if __name__ == '__main__':
-    for dataset, type in [('yahoo', 'real')]:
+    for dataset, type in [('yahoo', 'real'), ('NAB', 'relevant')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
                           # ('yahoo', 'A3Benchmark'),
@@ -526,4 +526,5 @@ if __name__ == '__main__':
                         else:
                             fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
+                        raise e
                         print(f'Error on {filename}')

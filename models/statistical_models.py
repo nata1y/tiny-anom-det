@@ -254,27 +254,13 @@ class SARIMA:
         return pred_thr[['lower value', 'upper value']]
 
     def plot(self, y, dataset, datatype, filename, full_test_data, is_ensemble=False):
-        # y = y[y['timestamp'] > 1500200000]
-        # y = y[y['timestamp'] < 1500300000]
-
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
         y = y.dropna(subset=['value'])
-        print(y)
-        print('====================================================')
         ax = y['value'].plot(label='observed')
 
         idx = 1
         for _, pred in enumerate(self.full_pred):
-            # pred_ci = mpred.conf_int()
-            # # play around with lower value of threshold
-            # if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
-            #     pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
-            #     ax.fill_between(pred_ci.index,
-            #                     pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
-            #                     pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
-            #                     color='b', alpha=.2)
-
             pred_ci = pred.conf_int()
             if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
                 pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
@@ -304,14 +290,6 @@ class SARIMA:
         plt.close('all')
         plt.clf()
 
-        # plt.plot(self.mean_fluctuation)
-        # ax.set_xlabel('Window')
-        # ax.set_ylabel('Variance of predicted means')
-        # plt.savefig(f'results/imgs/{dataset}/{datatype}/sarima/sarima_{filename.replace(".csv", "")}_mean_var.png')
-        #
-        # plt.close('all')
-        # plt.clf()
-        #
         self.full_pred = []
 
 
