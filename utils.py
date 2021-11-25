@@ -189,6 +189,9 @@ def preprocess_telemanom_datatset(root_path_save):
 
 
 def KL(a, b):
+    a = [0.00000001 if x == 0.0 else x for x in a]
+    b = [0.00000001 if x == 0.0 else x for x in b]
+
     a = np.asarray(a, dtype=np.float)
     b = np.asarray(b, dtype=np.float)
 
@@ -331,16 +334,17 @@ def load_ts_prediction_performance():
 
 def split_ensemble_stats():
     df = pd.read_csv('results/ensemble_train_data.csv')
+    df = df[df['dataset'] != 'NAB_relevant']
     df1 = df[df['model_f1'] >= 0.7]
-    df1.to_csv('results/all_series_can_predict.csv')
+    df1.to_csv('results/all_series_can_predict_nonab.csv')
     df2 = df[df['model_f1'] < 0.7]
-    df2.to_csv('results/all_series_cannot_predict.csv')
+    df2.to_csv('results/all_series_cannot_predict_nonab.csv')
 
 
 def analyze_ensemble_stats():
     import seaborn as sns
-    cor = pd.read_csv('results/all_series_can_predict.csv')
-    fail = pd.read_csv('results/all_series_cannot_predict.csv')
+    cor = pd.read_csv('results/all_series_can_predict_nonab.csv')
+    fail = pd.read_csv('results/all_series_cannot_predict_nonab.csv')
     for feature in cor.columns:
         if feature not in ['model_to_use', 'model_f1', 'dataset', 'ts']:
             data1 = pd.DataFrame([])
@@ -360,5 +364,94 @@ def analyze_ensemble_stats():
                 plt.hlines(data_full[data_full['Predictability'] == datas][feature].mean(), ticks[idx] - w,
                               ticks[idx] + w, color='k', linestyles='solid', linewidth=3.0, zorder=3)
 
-            plt.savefig(f'results/ts_properties/imgs/{feature}_predictability_dists.png')
+            plt.savefig(f'results/ts_properties/imgs/{feature}_predictability_dists_nonab.png')
             plt.clf()
+
+
+def machine_ts_to_features_correlation():
+    correlation_df = pd.DataFrame([])
+    idx = 0
+    exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
+    for dataset, subsets in [('NAB', ['relevant']), ('kpi', ['train'])]:
+        for tss in subsets:
+            ts_properties_c22 = pd.read_csv(f'results/ts_properties/{dataset}_{tss}_features_c22.csv').set_index('ts')
+            ts_properties_fforma = pd.read_csv(f'results/ts_properties/{dataset}_{tss}_features_fforma.csv').set_index('ts')
+            sz = 60
+            if dataset == 'kpi':
+                sz = 1024
+            dbscan = pd.read_csv(
+                f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_dbscan.csv')
+
+            try:
+                lstm = pd.read_csv(
+                    f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm.csv')
+            except:
+                try:
+                    lstm = pd.read_csv(
+                        f'C:\\Users\\oxifl\\Desktop\\thesis_res\\1_no_opt_no_updt\\{dataset}\\'
+                        f'min_metrics\\win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm.csv')
+                except:
+                    lstm = pd.DataFrame([])
+                    lstm['f1'] = [0 for i in range(dbscan.shape[0])]
+
+            try:
+                sarima = pd.read_csv(
+                    f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima.csv')
+            except:
+                try:
+                    sarima = pd.read_csv(
+                        f'C:\\Users\\oxifl\\Desktop\\thesis_res\\1_no_opt_no_updt\\{dataset}\\'
+                        f'min_metrics\\win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima.csv')
+                except:
+                    sarima = pd.DataFrame([])
+                    sarima['f1'] = [0 for i in range(dbscan.shape[0])]
+
+            sr = pd.read_csv(
+                f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sr.csv')
+
+            machine_data_path = f'datasets/machine_metrics/{tss}/'
+            for f_dbscan, f_lstm, f_sarima, f_sr, s_dbscan, s_lstm, s_sarima, s_sr, ts in \
+                    zip(dbscan['f1'], lstm['f1'], sarima['f1'], sr['f1'],
+                                                            dbscan['specificity'], lstm['specificity'],
+                                                            sarima['specificity'], sr['specificity'],
+                                                            dbscan['dataset']):
+
+                rep_val = 'f1'
+                series = pd.read_csv('/datasets/' + dataset + '/' + tss + '/' + ts + '.csv')
+                series.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+                if dataset != 'kpi':
+                    data_train, data_test = np.array_split(series, 2)
+                    if data_test['is_anomaly'].tolist().count(1) == 0:
+                        rep_val = 'specificity'
+                if str(ts) != 'nan' and ts + '.csv' in os.listdir(machine_data_path):
+                # if str(ts) != 'nan' and 'flatline' not in ts:
+                    correlation_df.loc[idx, 'dataset'] = dataset + '_' + tss
+                    correlation_df.loc[idx, 'ts'] = ts
+
+                    if rep_val == 'f1':
+                        correlation_df.loc[idx, 'dbscan_score'] = f_dbscan
+                        correlation_df.loc[idx, 'lstm_score'] = f_lstm
+                        correlation_df.loc[idx, 'sarima_score'] = f_sarima
+                        correlation_df.loc[idx, 'sr_score'] = f_sr
+                    else:
+                        correlation_df.loc[idx, 'dbscan_score'] = s_dbscan
+                        correlation_df.loc[idx, 'lstm_score'] = s_lstm
+                        correlation_df.loc[idx, 'sarima_score'] = s_sarima
+                        correlation_df.loc[idx, 'sr_score'] = s_sr
+
+                    for col in ts_properties_c22.columns:
+                        if col not in exclude:
+                            correlation_df.loc[idx, col] = ts_properties_c22.loc[ts + '.csv', col]
+
+                    for col in ts_properties_fforma.columns:
+                        if col not in exclude:
+                            correlation_df.loc[idx, col] = ts_properties_fforma.loc[ts + '.csv', col]
+                    idx += 1
+
+    correlation_df.to_csv(f'results/ts_properties/model_score_to_ts_dataset.csv')
+    res = correlation_df.corr(method='pearson')
+    res.to_csv(f'results/ts_properties/model_score_to_ts_correlation.csv')

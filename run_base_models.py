@@ -63,12 +63,7 @@ models = {
           # scale, n_clusters = 2
           # 'knn': (KMeans, [], []),
           # don't scale novelty=True
-          'mogaal': (MOGAAL, [], [])
-          # 'dbscan': (DBSCAN,
-          #            [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-          #            Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-          #                        'nan_euclidean', dtw], name='metric')],
-          #            [1, 2, dtw]),
+          # 'mogaal': (MOGAAL, [], [])
           # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
           #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
           # 'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
@@ -101,8 +96,13 @@ models = {
           #                           Integer(low=1, high=100, name='sensitivity')],
           #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-          #            [1.2, 1.2]),
+          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+                     [1.2, 1.2]),
+            'dbscan': (DBSCAN,
+                       [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+                        Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+                                     'nan_euclidean', dtw], name='metric')],
+                       [1, 2, dtw]),
           # 'ensemble': (Ensemble, [], []),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
@@ -407,6 +407,13 @@ def fit_base_model(model_params, for_optimization=True):
         f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
         print(f"My f-score: {f} vs standard f score {met_total[2]}")
 
+    try:
+        tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
+        specificity = tn / (tn + fp)
+    except:
+        specificity = y_pred_total.count(0) / data_test['is_anomaly'].tolist().count(0)
+        tn, fp, fn, tp = None, None, None, None
+
     if not for_optimization:
         # visualize(data)
 
@@ -440,35 +447,9 @@ def fit_base_model(model_params, for_optimization=True):
         except Exception as e:
             print(e)
 
-        try:
-            tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
-            specificity = tn / (tn + fp)
-        except:
-            specificity = None
-            tn, fp, fn, tp = None, None, None, None
-
-        # try:
-        #     trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov, tf = \
-        #         series_analysis(data)
-        # except:
-        #         try:
-        #             trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov, tf = \
-        #                 series_analysis(data[:25000])
-        #         except:
-        #             trend, seasonality, autocrr, non_lin, skewness, kurtosis, hurst, lyapunov, tf = \
-        #                 None, None, None, None, None, None, None, None, pd.DataFrame([])
-
         stats = stats.append({
             'model': name,
             'dataset': filename.replace('.csv', ''),
-            # 'trend': np.mean(data['trend'].tolist()) if 'trend' in data.columns else trend,
-            # 'seasonality': np.mean(data['seasonality1'].tolist()) if 'seasonality1' in data.columns else seasonality,
-            # 'autocorrelation': autocrr,
-            # 'non-linearity': non_lin,
-            # 'skewness': skewness,
-            # 'kurtosis': kurtosis,
-            # 'hurst': hurst,
-            # 'max_lyapunov_e': lyapunov,
             'f1': met_total[2],
             'precision': met_total[0],
             'recall': met_total[1],
@@ -482,13 +463,16 @@ def fit_base_model(model_params, for_optimization=True):
             'total_points': data_test.shape[0]
         }, ignore_index=True)
         stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
-        # tf.to_csv(f'results/{dataset}_{type}_{filename.replace(".csv", "")}_full_stats.csv', index=False)
 
-    return 1.0 - met_total[2]
+    # return specificity if no anomalies, else return f1 score
+    if data_test['is_anomaly'].tolist().count(1) == 0:
+        return 1.0 - specificity
+    else:
+        return 1.0 - met_total[2]
 
 
 if __name__ == '__main__':
-    for dataset, type in [('yahoo', 'real'), ('NAB', 'relevant')]:
+    for dataset, type in [('NAB', 'relevant'), ('yahoo', 'synthetic')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
                           # ('yahoo', 'A3Benchmark'),
@@ -501,7 +485,7 @@ if __name__ == '__main__':
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
                 if os.path.isfile(f):# and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
                     print(f"Training model {name} with data {filename}")
-                    data = pd.read_csv(f)
+                    data = pd.read_csv(f)[-3000:]
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
 
                     if dataset == 'kpi':

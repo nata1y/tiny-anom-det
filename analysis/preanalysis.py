@@ -367,7 +367,7 @@ def dist_between_sets():
 
 # compare orderings via different distance measures
 def compare_dataset_distances():
-    for features in ['fforma', 'c22']:
+    for features in ['c22']:
         df = pd.DataFrame([], columns=['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
                                        'intersection', 'squared_euclidian', 'distance_name'])
         df['distance_name'] = ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
@@ -379,7 +379,8 @@ def compare_dataset_distances():
             for dist2 in ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
                            'intersection', 'squared_euclidian']:
                 print(data)
-                tau, p_value = stats.kendalltau(data['norm_sum_' + dist], data['norm_sum_' + dist2])
+                tau, p_value = stats.kendalltau([sorted(data['norm_sum_' + dist]).index(x) for x in data['norm_sum_' + dist]],
+                                                [sorted(data['norm_sum_' + dist2]).index(x) for x in data['norm_sum_' + dist2]])
                 df.loc[dist, dist2] = tau
 
         df.to_csv(f'results/ts_properties/ranking_similarities_via_dists_{features}.csv')
@@ -480,3 +481,25 @@ def check_low_variance_features():
             idx += 1
 
         res.to_csv(f'results/ts_properties/variances_of_c22_features_withinn_datasets.csv')
+
+
+# compare dataset distances via features to those via model f-scores
+def compare_dataset_model_distances():
+    for features in ['c22']:
+        df = pd.DataFrame([], columns=['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                                       'intersection', 'squared_euclidian', 'distance_name'])
+        df['distance_name'] = ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                               'intersection', 'squared_euclidian']
+        df.set_index('distance_name', inplace=True)
+        data = pd.read_csv(f'results/ts_properties/dataset_was_dist_{features}.csv')
+        models = pd.read_csv(f'results/ts_properties/model_performance_per_dataset.csv')
+        models.set_index('model', inplace=True)
+        for dist in ['wasserstein', 'euclidian', 'sorensen', 'kl', 'inner_prod', 'fidelity',
+                     'intersection', 'squared_euclidian']:
+            for dist2 in models.columns:
+                print(data)
+                tau, p_value = stats.kendalltau([sorted(data['norm_sum_' + dist]).index(x) for x in data['norm_sum_' + dist]],
+                                                [sorted(data[dist2]).index(x) for x in data[dist2]])
+                df.loc[dist, dist2] = tau
+
+        df.to_csv(f'results/ts_properties/ranking_similarities_via_dists_{features}.csv')
