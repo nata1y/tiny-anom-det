@@ -1,3 +1,4 @@
+# Methods for analyzing TS features via different extractors: yahoo way, catch22 (fforma is in different project)
 import os
 import tsfresh
 from statsmodels.tsa.seasonal import seasonal_decompose

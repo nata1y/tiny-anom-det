@@ -1,3 +1,5 @@
+# methods used for analysis of time series before feeding them to detectors
+# currently depricated
 import copy
 from matplotlib import pyplot
 from pandas.plotting import autocorrelation_plot

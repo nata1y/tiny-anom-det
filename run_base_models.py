@@ -4,13 +4,9 @@ import time
 from collections import Counter
 
 import funcy
-from alibi_detect.utils.data import create_outlier_batch
-from funcy import flatten
-from matplotlib import pyplot
-from pytorch_forecasting import DeepAR
 from sklearn import metrics, preprocessing
-from sklearn.cluster import DBSCAN, KMeans
 
+from analysis.ts_analysis import machine_ts_to_features_correlation
 from models.decompose_model import DecomposeResidual
 from models.ensembel import Ensemble
 from utils import Stopper
@@ -22,11 +18,6 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.neighbors import NearestNeighbors, LocalOutlierFactor, KNeighborsClassifier
 from sklearn.svm import OneClassSVM
 from skopt import gp_minimize
-from skopt.callbacks import EarlyStopper
-from skopt.space import Integer, Categorical, Real
-from statsmodels.tsa._stl import STL
-from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 from analysis.postanalysis import confusion_visualization, weighted_f_score
 from models.nets import LSTM_autoencoder, Vae, SeqSeq
@@ -38,12 +29,12 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support
 
-from utils import create_dataset, plot_dbscan
-from tslearn.metrics import dtw
+from utils import create_dataset
 from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, DetectMode, SpectralResidual
 from alibi_detect.od import SpectralResidual as SR, OutlierVAE
-from alibi_detect.od import OutlierProphet, OutlierSeq2Seq
+from alibi_detect.od import OutlierSeq2Seq
 from pycaret.anomaly import *
+from model_collection import *
 
 
 root_path = os.getcwd()
@@ -51,50 +42,6 @@ le = preprocessing.LabelEncoder().fit([-1, 1])
 anomaly_window = 60
 step = 60
 data_test = None
-
-
-models = {
-          # 'mogaal': (MOGAAL, [], [])
-          'dbscan': (DBSCAN,
-                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-                      Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-                                    'nan_euclidean', dtw], name='metric')],
-                      [1, 2, dtw]),
-          # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
-          #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
-          # scale gamma='scale'
-          # 'ocsvm': (OneClassSVM,
-          #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')],
-          #           [0.85, 'poly']),
-          # no norm
-          # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
-          # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
-          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [10]),
-          # 'sr_alibi': (SR, [Real(low=0.01, high=10.0, name='threshold'),
-          #                   Integer(low=1, high=anomaly_window, name='window_amp'),
-          #                   Integer(low=1, high=anomaly_window, name='window_local'),
-          #                   Integer(low=1, high=anomaly_window, name='n_est_points'),
-          #                   Integer(low=1, high=anomaly_window, name='n_grad_points'),
-          #                   Real(low=0.5, high=0.999, name='percent_anom')],
-          #              [1.0, 20, 20, 10, 5, 0.95]),
-          # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
-          #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
-          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-                                    Integer(low=1, high=30, name='MAG_WINDOW'),
-                                    Integer(low=5, high=1000, name='SCORE_WINDOW'),
-                                    Integer(low=1, high=100, name='sensitivity')],
-                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
-          # 'seasonal_decomp': (DecomposeResidual, [], []),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-          #            [1.2, 1.2]),
-          # 'ensemble': (Ensemble, [], []),
-          # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
-          #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
-          #                      Integer(low=1, high=100, name='samples'),
-          #                      Real(low=0.5, high=0.999, name='percent_anom')],
-          #         [0.9, 100, 10, 0.95])
-          }
 
 
 def fit_base_model(model_params, for_optimization=True):
@@ -106,7 +53,7 @@ def fit_base_model(model_params, for_optimization=True):
             global data_test
     else:
         data_train, data_test = np.array_split(data, 2)
-        data_train = data_train[-500:]
+        data_train = data_train
         data_test = data_test[:5000]
     model = None
 
@@ -162,6 +109,16 @@ def fit_base_model(model_params, for_optimization=True):
         if data_train['is_anomaly'].tolist().count(1) == 0:
             return
 
+    if name == 'mmd':
+        model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
+                         p_val=0.05)
+    elif name == 'lsdd':
+        model = LSDDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
+                          p_val=0.05)
+
+    drift_model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
+                           p_val=0.05)
+
     if name in ['sarima', 'es']:
 
         start_time = time.time()
@@ -212,7 +169,7 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     else:
-        if name not in ['dbscan', 'isolation_forest', 'lof']:
+        if name not in ['dbscan', 'isolation_forest', 'lof', 'mmd', 'lsdd']:
             try:
                 X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
@@ -243,6 +200,7 @@ def fit_base_model(model_params, for_optimization=True):
     stacked_res = data_train[['timestamp', 'value']]
 
     pred_time = []
+    drift_windows = []
 
     for start in range(0, data_test.shape[0], step):
         try:
@@ -259,6 +217,14 @@ def fit_base_model(model_params, for_optimization=True):
 
             X, y = window['value'], window['is_anomaly']
             if y.tolist():
+                # check for drifts #####################################################################################
+                print(window.shape)
+                drift_pred = drift_model.predict(window[['value']].to_numpy())
+                if drift_pred['data']['is_drift'] == 1:
+                    # drift_windows += window['timestamp'].tolist()
+                    drift_windows.append((window['timestamp'].min(), window['timestamp'].max()))
+
+                # then apply anomaly detectors #########################################################################
                 if name in ['sarima']:
                     if for_optimization:
                         y_pred = model.predict(window[['timestamp', 'value']], optimization=True)
@@ -403,23 +369,23 @@ def fit_base_model(model_params, for_optimization=True):
         try:
             confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
                                     data_test['is_anomaly'].tolist(), y_pred_total,
-                                    dataset, name, filename.replace('.csv', ''), type)
+                                    dataset, name, filename.replace('.csv', ''), type, drift_windows)
         except Exception as e:
-            print(e)
+            raise e
 
         try:
             if name in ['sarima', 'es']:
-                model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test)
+                model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test, drift_windows)
             elif name in ['lstm']:
-                model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+                model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test, drift_windows)
             # elif name == 'ensemble':
             #     model.plot(dataset)
             elif name == 'sr':
-                model.plot(dataset, type, filename, data_test)
+                model.plot(dataset, type, filename, data_test, drift_windows)
                 # if model.dynamic_threshold:
                 #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
-            elif name == 'dbscan':
-                plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
+            # elif name == 'dbscan':
+            #     plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
             # elif name == 'seasonal_decomp':
             #     model.plot(type, filename, )
         except Exception as e:
@@ -484,7 +450,7 @@ if __name__ == '__main__':
                     # continue
 
                     try:
-                        if name not in ['knn', 'mogaal']:
+                        if name not in ['knn', 'mogaal', 'mmd', 'lsdd']:
                         ################ Bayesian optimization ###################################################
                             bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
                                                     random_state=13, verbose=False, x0=def_params)

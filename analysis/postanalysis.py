@@ -1,3 +1,4 @@
+# methods for scoring and ploting of predictor performances
 from matplotlib import pyplot
 from matplotlib.lines import Line2D
 from pandas.plotting import autocorrelation_plot
@@ -12,7 +13,7 @@ import skopt
 import numpy as np
 
 
-def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, datatype):
+def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, datatype, drift_windows):
     tp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 1]
     tn = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 0]
     fp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == 0 and pred_val[i] == 1]
@@ -29,6 +30,9 @@ def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, d
                        Line2D([0], [0], marker='o', color='r', markersize=5, label='FP'),
                        Line2D([0], [0], marker='o', color='y', markersize=5, label='FN')]
 
+    # ax.fill_betweenx(y, x, where=x in drift_windows, color='red', alpha=0.3)
+    for wd in drift_windows:
+        ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
     ax.legend(handles=legend_elements, loc='best')
 
     pyplot.savefig(f'results/imgs/{dataset}/{datatype}/{name}/{name}_{filename}.png')

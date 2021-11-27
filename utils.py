@@ -5,10 +5,8 @@ import numpy as np
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
-import scipy
 import tensorflow
 from catch22 import catch22_all
-from scipy.stats import kstest
 from skopt.callbacks import EarlyStopper
 
 

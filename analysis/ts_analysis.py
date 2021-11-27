@@ -1,3 +1,4 @@
+# analyze extracted TS properties to model performance correlations
 import pandas as pd
 import os
 import numpy as np
@@ -7,7 +8,7 @@ def machine_ts_to_features_correlation():
     correlation_df = pd.DataFrame([])
     idx = 0
     exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
-    for dataset, subsets in [('NAB', ['relevant']), ('kpi', ['train'])]:
+    for dataset, subsets in [('NAB', ['relevant'])]:#, ('kpi', ['train'])]:
         #, ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
         for tss in subsets:
             print(tss)
@@ -18,12 +19,12 @@ def machine_ts_to_features_correlation():
                 sz = 1024
             dbscan = pd.read_csv(
                 f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
-                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_dbscan.csv')
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_dbscan_machine.csv')
 
             try:
                 lstm = pd.read_csv(
                     f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
-                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm.csv')
+                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm_machine.csv')
             except:
                 try:
                     lstm = pd.read_csv(
@@ -36,7 +37,7 @@ def machine_ts_to_features_correlation():
             try:
                 sarima = pd.read_csv(
                     f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
-                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima.csv')
+                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima_machine.csv')
             except:
                 try:
                     sarima = pd.read_csv(
@@ -48,7 +49,7 @@ def machine_ts_to_features_correlation():
 
             sr = pd.read_csv(
                 f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
-                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sr.csv')
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sr_machine.csv')
 
             machine_data_path = f'datasets/machine_metrics/{tss}/'
             for f_dbscan, f_lstm, f_sarima, f_sr, s_dbscan, s_lstm, s_sarima, s_sr, ts in \
@@ -89,6 +90,6 @@ def machine_ts_to_features_correlation():
                             correlation_df.loc[idx, col] = ts_properties_fforma.loc[ts + '.csv', col]
                     idx += 1
 
-    correlation_df.to_csv(f'results/ts_properties/model_score_to_ts_machine_dataset.csv')
+    correlation_df.to_csv(f'results/ts_properties/model_score_to_ts_machine_nabt.csv')
     res = correlation_df.corr(method='pearson')
-    res.to_csv(f'results/ts_properties/model_score_to_ts_machine_correlation.csv')
+    res.to_csv(f'results/ts_properties/model_score_to_ts_machine_nab.csv')
