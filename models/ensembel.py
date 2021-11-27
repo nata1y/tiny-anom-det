@@ -8,7 +8,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 from skopt.space import Integer, Categorical, Real
 
-from analysis.preanalysis import series_analysis
 from models.nets import LSTM_autoencoder
 from models.sr.spectral_residual import SpectralResidual
 from models.sr.util import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, DetectMode

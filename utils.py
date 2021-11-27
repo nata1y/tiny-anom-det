@@ -229,11 +229,7 @@ def load_ucr_ts():
     data_path = 'datasets/ucr_ts/'
     df = pd.read_csv('results/ts_properties/ucr_ts_features_c22.csv')
     idx = df.shape[0]
-    found = False
     for dirname in os.listdir(data_path):
-        if not found and dirname != 'PLAID':
-            continue
-        found = True
         d = os.path.join(data_path, dirname)
         if not os.path.isfile(d):
             print(f"Processing ts {d}")

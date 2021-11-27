@@ -13,8 +13,7 @@ from sklearn.cluster import DBSCAN, KMeans
 
 from models.decompose_model import DecomposeResidual
 from models.ensembel import Ensemble
-from utils import Stopper, handle_missing_values_kpi, preprocess_nab_labels, preprocess_telemanom_datatset, load_ucr_ts, \
-    load_ts_prediction_performance, split_ensemble_stats, analyze_ensemble_stats, machine_ts_to_features_correlation
+from utils import Stopper
 
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import confusion_matrix, f1_score
@@ -55,18 +54,14 @@ data_test = None
 
 
 models = {
-          # scale, n_clusters = 2
-          # 'knn': (KMeans, [], []),
-          # don't scale novelty=True
           # 'mogaal': (MOGAAL, [], [])
-          #   'dbscan': (DBSCAN,
-          #              [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-          #               Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-          #                            'nan_euclidean', dtw], name='metric')],
-          #              [1, 2, dtw]),
+          'dbscan': (DBSCAN,
+                     [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+                      Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+                                    'nan_euclidean', dtw], name='metric')],
+                      [1, 2, dtw]),
           # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
           #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
-          # 'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
           # scale gamma='scale'
           # 'ocsvm': (OneClassSVM,
           #           [Real(low=0.001, high=0.999, name='nu'), Categorical(['linear', 'rbf', 'poly'], name='kernel')],
@@ -75,10 +70,6 @@ models = {
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [10]),
-          # 'stl': (STL, []),
-          # 'deepar': (DeepAR, [], []),
-          # 'prophet': (OutlierProphet, [Real(low=0.01, high=5.0, name='threshold'),
-          #                              Categorical(['linear', 'logistic'], name='growth')], [0.9, 'linear']),
           # 'sr_alibi': (SR, [Real(low=0.01, high=10.0, name='threshold'),
           #                   Integer(low=1, high=anomaly_window, name='window_amp'),
           #                   Integer(low=1, high=anomaly_window, name='window_local'),
@@ -88,16 +79,15 @@ models = {
           #              [1.0, 20, 20, 10, 5, 0.95]),
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
-          # 'sr-cnn': []
-          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
-          #                           Integer(low=1, high=100, name='sensitivity')],
-          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+                                    Integer(low=1, high=30, name='MAG_WINDOW'),
+                                    Integer(low=5, high=1000, name='SCORE_WINDOW'),
+                                    Integer(low=1, high=100, name='sensitivity')],
+                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
-          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-                     [1.2, 1.2]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+          #            [1.2, 1.2]),
           # 'ensemble': (Ensemble, [], []),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
@@ -135,10 +125,8 @@ def fit_base_model(model_params, for_optimization=True):
         data_test['value'] = scaler.transform(data_test[['value']])
 
     # create models with hyper-parameters
-    if name == 'knn':
-        model = KMeans(n_clusters=2)
-    # elif name == 'lof':
-    #     model = LocalOutlierFactor(n_neighbors=model_params[0], contamination=model_params[1])
+    if name == 'lof':
+        model = LocalOutlierFactor(n_neighbors=model_params[0], contamination=model_params[1])
     elif name == 'ocsvm':
         model = OneClassSVM(gamma='scale', nu=model_params[0], kernel=model_params[1])
     elif name == 'dbscan':
@@ -158,20 +146,12 @@ def fit_base_model(model_params, for_optimization=True):
                                threshold_net=seqseq_net.threshold_net_seqseq, seq2seq=None,
                                latent_dim=int(2 * model_params[0]))
         percent_anomaly = model_params[1]
-    elif name == 'prophet':
-        model = OutlierProphet(threshold=model_params[0], growth=model_params[1])
-    elif name == 'sr_alibi':
-        model = SR(threshold=model_params[0], window_amp=model_params[1], window_local=model_params[2],
-                   n_est_points=model_params[3], n_grad_points=model_params[4]) # dont forget dt param!!!!
-        percent_anomaly = model_params[5]
 
     elif name == 'vae':
         vae_net = Vae(model_params[1])
         model = OutlierVAE(threshold=model_params[0], encoder_net=vae_net.encoder_net_vae,
                            decoder_net=vae_net.decoder_net_vae, latent_dim=model_params[1], samples=model_params[2])
         percent_anomaly = model_params[3]
-    elif name == 'deepar':
-        model = DeepAR()
     elif name == 'seasonal_decomp':
         model = DecomposeResidual()
     elif name == 'ensemble':
@@ -217,8 +197,6 @@ def fit_base_model(model_params, for_optimization=True):
 
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
-    elif name == 'sr_alibi':
-        model.infer_threshold(data_train[['value']].to_numpy(), threshold_perc=percent_anomaly)
     elif name == 'seasonal_decomp':
         model.fit(data_train[['timestamp', 'value']], dataset)
     elif name == 'ensemble':
