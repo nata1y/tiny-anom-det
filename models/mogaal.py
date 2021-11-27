@@ -148,6 +148,7 @@ class MOGAAL:
         return data_batch
 
     def fit(self, data=pd.DataFrame([]), plot=True, batch_size=60):
+        print('hereeeee')
         self.train = True
 
         # initialize dataset
@@ -186,7 +187,7 @@ class MOGAAL:
                 tsvalues = tensorflow.expand_dims(tensorflow.gather(self.names['fake' + str(i)], [0], axis=1), axis=0)
                 # X, y = create_dataset_keras(tsvalues, tsvalues, 60)
                 self.names['fake' + str(i)] = self.discriminator(tsvalues) #r(self.names['fake' + str(i)])
-                self.names['combine_model' + str(i)] = Model(latent, self.names['fake' + str(i)])
+                self.names['combine_model' + str(i)] = Model(1, self.names['fake' + str(i)])
                 self.names['combine_model' + str(i)].compile(optimizer=
                                                              SGD(lr=self.lr_g, decay=self.decay, momentum=self.momentum),
                                                              loss='binary_crossentropy')
@@ -274,6 +275,8 @@ class MOGAAL:
                             self.names['trick' + str(i)] = self.names['trick' + str(i)].reshape(1,
                                                                                                 self.names['trick' + str(i)].shape[0],
                                                                                                 self.names['trick' + str(i)].shape[1])
+                            print(noise.shape)
+                            print(self.names['trick' + str(i)].shape)
                             self.names['sub_generator' + str(i) + '_loss'] = self.names['combine_model' +
                                                                                         str(i)].train_on_batch(noise, self.names['trick' + str(i)])
                             train_history[f'sub_generator{i}_loss'].append(self.names['sub_generator' + str(i) + '_loss'])

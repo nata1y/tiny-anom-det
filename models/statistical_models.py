@@ -38,10 +38,17 @@ class SARIMA:
     def _get_time_index(self, data):
         if self.dataset in ['yahoo', 'kpi']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
+            print(data.head())
         if self.dataset in ['NAB']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'])
+            # preprocessing depending on TS.....
+            data.set_index('timestamp', inplace=True)
+            data = data[~data.index.duplicated(keep='first')]
+            data = data.asfreq('5T') #'5T'
+            return data
         data.set_index('timestamp', inplace=True)
-        if self.dataset in ['kpi']:
+        if self.dataset in ['kpi', 'NAB']:
+            data = data[~data.index.duplicated(keep='first')]
             data = data.asfreq('T')
             if self.model:
                 dti = pd.DataFrame([])
@@ -106,6 +113,7 @@ class SARIMA:
 
         print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
         self.model = self.model.fit()
+        print(self.model.summary())
         self.latest_train_snippest = data
         pred = self.model.get_prediction(start=data.index.min(), end=data.index.max(),
                                          dynamic=False, alpha=0.01)
@@ -122,8 +130,12 @@ class SARIMA:
         ################################################################################################################
         old_model = copy.deepcopy(self.model)
         ################################################################################################################
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print(self.model.fittedvalues)
+        print('separator')
         print(newdf)
+        print(f'Window shape {newdf.shape}')
+        print('-------------------------------')
         # pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
         #                                  dynamic=False, alpha=0.25)
         #

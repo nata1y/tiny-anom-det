@@ -14,9 +14,8 @@ from sklearn.cluster import DBSCAN, KMeans
 from models.decompose_model import DecomposeResidual
 from models.ensembel import Ensemble
 from utils import Stopper, handle_missing_values_kpi, preprocess_nab_labels, preprocess_telemanom_datatset, load_ucr_ts, \
-    load_ts_prediction_performance, split_ensemble_stats, analyze_ensemble_stats
-from sklearn.covariance import EllipticEnvelope
-from sklearn.decomposition import PCA
+    load_ts_prediction_performance, split_ensemble_stats, analyze_ensemble_stats, machine_ts_to_features_correlation
+
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import confusion_matrix, f1_score
 from sklearn.mixture import GaussianMixture
@@ -30,11 +29,7 @@ from statsmodels.tsa._stl import STL
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from analysis.preanalysis import visualize, series_analysis, periodicity_analysis, full_analyzis, \
-    analyse_dataset_catch22, compare_dataset_properties, calculate_dists, dist_between_sets, compare_dataset_distances, \
-    compare_feature_samples_from_same_dist, check_low_variance_features, check_dist_sample
 from analysis.postanalysis import confusion_visualization, weighted_f_score
-from analysis.time_series_feature_analysis import analyse_series_properties
 from models.nets import LSTM_autoencoder, Vae, SeqSeq
 from models.sr.main import detect_anomaly
 from models.statistical_models import SARIMA, ExpSmoothing
@@ -64,6 +59,11 @@ models = {
           # 'knn': (KMeans, [], []),
           # don't scale novelty=True
           # 'mogaal': (MOGAAL, [], [])
+          #   'dbscan': (DBSCAN,
+          #              [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
+          #               Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
+          #                            'nan_euclidean', dtw], name='metric')],
+          #              [1, 2, dtw]),
           # 'lof': (LocalOutlierFactor, [Integer(low=1, high=1000, name='n_neighbors'),
           #                              Real(low=0.001, high=0.5, name="contamination")], [5, 0.1]),
           # 'lof': (LocalOutlierFactor, [Real(low=0.01, high=0.5, name='fraction')], [0.1]),
@@ -76,7 +76,6 @@ models = {
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
           # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [10]),
           # 'stl': (STL, []),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'deepar': (DeepAR, [], []),
           # 'prophet': (OutlierProphet, [Real(low=0.01, high=5.0, name='threshold'),
           #                              Categorical(['linear', 'logistic'], name='growth')], [0.9, 'linear']),
@@ -95,14 +94,10 @@ models = {
           #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
           #                           Integer(low=1, high=100, name='sensitivity')],
           #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
           'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
                      [1.2, 1.2]),
-            'dbscan': (DBSCAN,
-                       [Integer(low=1, high=100, name='eps'), Integer(low=1, high=100, name='min_samples'),
-                        Categorical(['cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan',
-                                     'nan_euclidean', dtw], name='metric')],
-                       [1, 2, dtw]),
           # 'ensemble': (Ensemble, [], []),
           # 'vae': (OutlierVAE, [Real(low=0.01, high=0.99, name='threshold'),
           #                      Integer(low=2, high=anomaly_window, name='latent_dim'),
@@ -121,6 +116,8 @@ def fit_base_model(model_params, for_optimization=True):
             global data_test
     else:
         data_train, data_test = np.array_split(data, 2)
+        data_train = data_train[-500:]
+        data_test = data_test[:5000]
     model = None
 
     if for_optimization:
@@ -399,13 +396,16 @@ def fit_base_model(model_params, for_optimization=True):
         except Exception as e:
             raise e
 
-    met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
+    joint_sz = min(data_test.shape[0], len(y_pred_total))
+    met_total = precision_recall_fscore_support(data_test[:joint_sz]['is_anomaly'], y_pred_total[:joint_sz], average='binary')
     # Do f1 score smoothing
     # smoothed_f1 = pd.DataFrame(f1).ewm(com=0.5).mean()
 
     if name in ['sarima', 'lstm']:
-        f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
-        print(f"My f-score: {f} vs standard f score {met_total[2]}")
+        # f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
+        # print(f"My f-score: {f} vs standard f score {met_total[2]}")
+        print(f"standard f score {met_total[2]}")
+
 
     try:
         tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
@@ -472,7 +472,7 @@ def fit_base_model(model_params, for_optimization=True):
 
 
 if __name__ == '__main__':
-    for dataset, type in [('NAB', 'relevant'), ('yahoo', 'synthetic')]:
+    for dataset, type in [('NAB', 'relevant')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
                           # ('yahoo', 'A3Benchmark'),
@@ -480,12 +480,19 @@ if __name__ == '__main__':
                           # ('yahoo', 'synthetic')
         for name, (model, bo_space, def_params) in models.items():
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
+            try:
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+            except:
+                stats = pd.DataFrame([])
             for filename in os.listdir(train_data_path):
                 f = os.path.join(train_data_path, filename)
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
-                if os.path.isfile(f):# and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
+                machine_data_path = f'datasets/machine_metrics/{type}/'
+                if os.path.isfile(f) and filename in os.listdir(machine_data_path) and \
+                        (stats.shape[0] == 0 or filename.replace('.csv', '') not in stats['dataset'].tolist()):
+                    # and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
                     print(f"Training model {name} with data {filename}")
-                    data = pd.read_csv(f)[-3000:]
+                    data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
 
                     if dataset == 'kpi':
@@ -499,7 +506,7 @@ if __name__ == '__main__':
                     # continue
 
                     try:
-                        if name not in ['knn', 'sarima', 'mogaal']:
+                        if name not in ['knn', 'mogaal']:
                         ################ Bayesian optimization ###################################################
                             bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
                                                     random_state=13, verbose=False, x0=def_params)
