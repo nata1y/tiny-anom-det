@@ -265,7 +265,7 @@ class SARIMA:
 
         return pred_thr[['lower value', 'upper value']]
 
-    def plot(self, y, dataset, datatype, filename, full_test_data, is_ensemble=False):
+    def plot(self, y, dataset, datatype, filename, full_test_data, drift_windows, is_ensemble=False):
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
         y = y.dropna(subset=['value'])
@@ -294,6 +294,8 @@ class SARIMA:
 
             idx += 1
 
+        for wd in drift_windows:
+            ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
         ax.set_xlabel('Date')
         ax.set_ylabel('Values')
         plt.legend()
@@ -358,7 +360,7 @@ class ExpSmoothing:
 
         return y_pred
 
-    def plot(self, y, dataset, datatype, filename, full_test_data_):
+    def plot(self, y, dataset, datatype, filename, full_test_data_, drift_windows):
         full_test_data = self._get_time_index(full_test_data_)
         ax = full_test_data['value'].plot(label='observed')
 
@@ -384,6 +386,9 @@ class ExpSmoothing:
                     print(pred)
                     print(idx)
                     raise e
+
+        for wd in drift_windows:
+            ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
 
         ax.set_xlabel('Date')
         ax.set_ylabel('Values')

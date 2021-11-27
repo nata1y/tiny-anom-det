@@ -89,7 +89,7 @@ class SpectralResidual:
         loss_df['timestamp'] = timestamps
         self.threshold_model.plot_threshold(loss_df, dataset, datatype, filename, data_test, 'sr')
 
-    def plot(self, dataset, datatype, filename, datatest):
+    def plot(self, dataset, datatype, filename, datatest, drift_windows):
         fig = go.Figure()
 
         datatest.set_index('timestamp', inplace=True)

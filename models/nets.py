@@ -1,30 +1,21 @@
 # fromhttps://towardsdatascience.com/time-series-of-price-anomaly-detection-with-lstm-11a12ba4f6d9
-import math
 
 import funcy
-import torch
-import scipy.stats as st
-from keras.engine.input_layer import InputLayer
-from keras.layers import Conv2D, Conv2DTranspose, Reshape, Conv1D, MaxPooling1D, Flatten
-from sklearn.cluster import DBSCAN
-from tensorflow import keras
-from sklearn.preprocessing import StandardScaler
-import tensorflow as tf
-from pytorch_forecasting.models.deepar import DeepAR
-
-import plotly.graph_objects as go
-
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDistributed
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+import scipy.stats as st
+import tensorflow as tf
+from keras.engine.input_layer import InputLayer
+from sklearn.cluster import DBSCAN
+from tensorflow import keras
+from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDistributed
+from tensorflow.keras.models import Sequential
 
 # print(f'Torch cuda is avaliable {torch.cuda.is_available()}')
-from analysis.preanalysis import periodicity_analysis
 from models.sr.spectral_residual import SpectralResidual, MAG_WINDOW, SCORE_WINDOW, THRESHOLD
 from models.sr.util import DetectMode
 from models.statistical_models import SARIMA
-from utils import adjust_range
 
 print(f'Running on GPU {tf.test.is_built_with_cuda()}. Devices: {tf.config.list_physical_devices("GPU")}')
 
