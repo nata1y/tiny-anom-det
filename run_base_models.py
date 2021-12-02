@@ -7,7 +7,7 @@ from sklearn import preprocessing
 
 from models.decompose_model import DecomposeResidual
 from models.ensembel import Ensemble
-from utils import Stopper
+from utils import Stopper, drift_metrics, plot_general
 
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import confusion_matrix
@@ -27,18 +27,17 @@ from alibi_detect.od import OutlierVAE
 from alibi_detect.od import OutlierSeq2Seq
 from pycaret.anomaly import *
 from model_collection import *
+from settings import *
 
 
 root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
-anomaly_window = 60
-step = 60
-data_in_memory_sz = 3000
 data_test = None
+data_in_memory_sz = 3000
 
 
 def fit_base_model(model_params, for_optimization=True):
-    global  data_in_memory_sz
+    global data_in_memory_sz
     percent_anomaly = 0.95
     # 50% train-test split
     if dataset == 'kpi':
@@ -46,8 +45,8 @@ def fit_base_model(model_params, for_optimization=True):
         if not for_optimization:
             global data_test
     else:
-        data_train, data_test = np.array_split(data, 2)
-        data_train = data_train[-3000:]
+        data_train, data_test = copy.deepcopy(data), copy.deepcopy(data) #np.array_split(data, 2)
+        data_train = data_train
         data_test = data_test
     model = None
 
@@ -107,13 +106,20 @@ def fit_base_model(model_params, for_optimization=True):
         model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
                          p_val=0.05)
         data_in_memory_sz = model_params[0]
-    elif name == 'lsdd':
-        model = LSDDDrift(data_train[['value']].astype('float32').to_numpy(), backend='tensorflow', data_type='time-series',
-                          p_val=0.05)
-    elif name == 'mmd-online':
-        model = MMDDriftOnlineTF(data_train[['value']].astype('float32').to_numpy(), data_type='time-series',
-                                 window_size=15, ert=1)
-
+    elif name == 'adwin':
+        model = ADWIN()
+    elif name == 'ddm':
+        model = DDM()
+    elif name == 'eddm':
+        model = EDDM()
+    elif name == 'hddma':
+        model = HDDM_A()
+    elif name == 'hddmw':
+        model = HDDM_W()
+    elif name == 'kswin':
+        model = KSWIN()
+    elif name == 'ph':
+        model = PageHinkley()
     # drift_model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
     #                        p_val=0.05)
 
@@ -167,7 +173,8 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     else:
-        if name not in ['dbscan', 'isolation_forest', 'lof', 'mmd', 'lsdd', 'mmd-online']:
+        if name not in ['dbscan', 'isolation_forest', 'lof', 'mmd', 'lsdd', 'mmd-online',
+                        'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph']:
             try:
                 X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
@@ -322,7 +329,23 @@ def fit_base_model(model_params, for_optimization=True):
                         y_pred = [0 for _ in range(len(y.tolist()))]
                     elif drift_pred['data']['is_drift'] == 0 and y.tolist().count(1) > 0:
                         y_pred = [0 for _ in range(len(y.tolist()))]
-
+                elif name in ['adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph']:
+                    y_pred = []
+                    for idx, row in window.iterrows():
+                        model.add_element(row['value'])
+                        if model.detected_warning_zone():
+                            pass
+                        if model.detected_change():
+                            model.reset()
+                            try:
+                                drift_windows.append((datetime.datetime.strptime(row['timestamp'], '%m/%d/%Y %H:%M'),
+                                                      datetime.datetime.strptime(row['timestamp'], '%m/%d/%Y %H:%M')))
+                            except:
+                                drift_windows.append((datetime.datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S'),
+                                                      datetime.datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S')))
+                            y_pred.append(1)
+                        else:
+                            y_pred.append(0)
                 else:
                     y_pred = model.predict(window[['value', 'timestamp']])
 
@@ -332,7 +355,7 @@ def fit_base_model(model_params, for_optimization=True):
                     pass
 
                 idx += 1
-                if name not in ['lsdd', 'mmd', 'mmd-online']:
+                if name not in ['lsdd', 'mmd', 'mmd-online', 'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph']:
                     if anomaly_window == step:
                         # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
                         common = Counter(funcy.lflatten(y_pred)[:window.shape[0]]).most_common(1)[0][0]
@@ -357,7 +380,6 @@ def fit_base_model(model_params, for_optimization=True):
                             y_pred_total = [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)]
                 else:
                     if anomaly_window == step:
-                        # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
                         y_pred_total += [val for val in funcy.lflatten(y_pred)[:window.shape[0]]]
                     else:
                         anomaly_window_ = data_in_memory
@@ -383,78 +405,68 @@ def fit_base_model(model_params, for_optimization=True):
         except Exception as e:
             raise e
 
-    joint_sz = min(data_test.shape[0], len(y_pred_total))
-    met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
-    # Do f1 score smoothing
-    # smoothed_f1 = pd.DataFrame(f1).ewm(com=0.5).mean()
-
-    if name in ['sarima', 'lstm']:
-        # f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
-        # print(f"My f-score: {f} vs standard f score {met_total[2]}")
-        print(f"standard f score {met_total[2]}")
-
-    try:
-        tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
-        specificity = tn / (tn + fp)
-    except:
-        specificity = y_pred_total.count(0) / data_test['is_anomaly'].tolist().count(0)
-        tn, fp, fn, tp = None, None, None, None
-
     if not for_optimization:
-        # visualize(data)
+        plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows)
+
+    if not test_drifts:
+        met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
 
         try:
-            stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
+            tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
+            specificity = tn / (tn + fp)
         except:
-            stats = pd.DataFrame([])
+            specificity = y_pred_total.count(0) / data_test['is_anomaly'].tolist().count(0)
+            tn, fp, fn, tp = None, None, None, None
 
-        try:
-            confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
-                                    data_test['is_anomaly'].tolist(), y_pred_total,
-                                    dataset, name, filename.replace('.csv', '') + '-drift', type, drift_windows)
-        except Exception as e:
-            raise e
+        if not for_optimization:
+            try:
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
+            except:
+                stats = pd.DataFrame([])
 
-        try:
-            if name in ['sarima', 'es']:
-                model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test, drift_windows)
-            elif name in ['lstm']:
-                model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test, drift_windows)
-            # elif name == 'ensemble':
-            #     model.plot(dataset)
-            elif name == 'sr':
-                model.plot(dataset, type, filename, data_test, drift_windows)
-                # if model.dynamic_threshold:
-                #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
-            # elif name == 'dbscan':
-            #     plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
-            # elif name == 'seasonal_decomp':
-            #     model.plot(type, filename, )
-        except Exception as e:
-            print(e)
+            stats = stats.append({
+                'model': name,
+                'dataset': filename.replace('.csv', ''),
+                'f1': met_total[2],
+                'precision': met_total[0],
+                'recall': met_total[1],
+                'fp': fp,
+                'fn': fn,
+                'tp': tp,
+                'tn': tn,
+                'specificity': specificity,
+                'total_anomalies': data_test['is_anomaly'].tolist().count(1),
+                'prediction_time': np.mean(pred_time),
+                'total_points': data_test.shape[0]
+            }, ignore_index=True)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv', index=False)
+        # return specificity if no anomalies, else return f1 score
+        if data_test['is_anomaly'].tolist().count(1) == 0:
+            return 1.0 - specificity
+        else:
+            return 1.0 - met_total[2]
 
-        stats = stats.append({
-            'model': name,
-            'dataset': filename.replace('.csv', ''),
-            'f1': met_total[2],
-            'precision': met_total[0],
-            'recall': met_total[1],
-            'fp': fp,
-            'fn': fn,
-            'tp': tp,
-            'tn': tn,
-            'specificity': specificity,
-            'total_anomalies': data_test['is_anomaly'].tolist().count(1),
-            'prediction_time': np.mean(pred_time),
-            'total_points': data_test.shape[0]
-        }, ignore_index=True)
-        stats.to_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv', index=False)
-
-    # return specificity if no anomalies, else return f1 score
-    if data_test['is_anomaly'].tolist().count(1) == 0:
-        return 1.0 - specificity
     else:
-        return 1.0 - met_total[2]
+        fp, latency, misses = drift_metrics(data_test['is_anomaly'].tolist(), y_pred_total)
+        if not for_optimization:
+            try:
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
+            except:
+                stats = pd.DataFrame([])
+
+            stats = stats.append({
+                'model': name,
+                'dataset': filename.replace('.csv', ''),
+                'fp': fp,
+                'avg_latency': latency,
+                'misses': misses,
+                'total_anomalies': data_test['is_anomaly'].tolist().count(1),
+                'prediction_time': np.mean(pred_time),
+                'total_points': data_test.shape[0]
+            }, ignore_index=True)
+
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv', index=False)
+        return latency + fp + misses
 
 
 if __name__ == '__main__':
@@ -464,9 +476,9 @@ if __name__ == '__main__':
                           # ('yahoo', 'A3Benchmark'),
                           # ('NAB', 'relevant'),
                           # ('yahoo', 'synthetic')
-        for name, (model, bo_space, def_params) in models.items():
+        for name, (model, bo_space, def_params) in drift_detectors.items():
             train_data_path = root_path + '/datasets/machine_metrics/nab_drift/'
-            # root_path + '/datasets/' + dataset + '/' + type + '/'
+            # train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
             try:
                 statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
             except:
@@ -475,7 +487,7 @@ if __name__ == '__main__':
                 print(filename)
                 f = os.path.join(train_data_path, filename)
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
-                machine_data_path = f'datasets/machine_metrics/nab_drift/'
+                machine_data_path = f'datasets/machine_metrics/relevant/'
                 if os.path.isfile(f) and filename in os.listdir(machine_data_path):
                         # and (statf.shape[0] == 0 or filename.replace('.csv', '') not in statf['dataset'].tolist()):
                     # and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
@@ -494,7 +506,7 @@ if __name__ == '__main__':
                     # quit()
 
                     try:
-                        if name not in ['knn', 'mogaal', 'mmd-online']:
+                        if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
                         ################ Bayesian optimization ###################################################
                             bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
                                                     random_state=13, verbose=False, x0=def_params)
@@ -505,4 +517,5 @@ if __name__ == '__main__':
                         else:
                             fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
+                        raise e
                         print(f'Error on {filename}')

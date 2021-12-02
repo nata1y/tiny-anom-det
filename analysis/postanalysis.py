@@ -18,7 +18,11 @@ def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, d
     try:
         x = [datetime.datetime.strptime(x, '%m/%d/%Y %H:%M') for x in x]
     except:
-        pass
+        try:
+            x = [datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S') for x in x]
+        except:
+            pass
+
     tp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 1]
     tn = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 0]
     fp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == 0 and pred_val[i] == 1]

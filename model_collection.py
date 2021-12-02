@@ -1,11 +1,14 @@
 from alibi_detect.cd import MMDDrift, LSDDDrift
 from sklearn.cluster import DBSCAN
+from skmultiflow.drift_detection import DDM, PageHinkley, KSWIN, HDDM_W, HDDM_A, EDDM
 from skopt.space import Categorical, Integer, Real
+from skmultiflow.drift_detection.adwin import ADWIN
 from tslearn.metrics import dtw
 
 from models.nets import LSTM_autoencoder
 from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, SpectralResidual
 from models.statistical_models import SARIMA
+
 
 models = {
           # 'mogaal': (MOGAAL, [], []),
@@ -42,8 +45,6 @@ models = {
           # 'seasonal_decomp': (DecomposeResidual, [], []),
           # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
           #            [1.2, 1.2]),
-          'mmd': (MMDDrift, [Integer(low=100, high=5000, name="data_in_memory"),
-                             Real(low=0.01, high=0.5, name="p_val")], [100, .05]),
           # 'mmd-online': (MMDDriftOnlineTF, [], []),
           # 'lsdd': (LSDDDrift, [Real(low=0.000001, high=0.5, name="p_val")], [0.05])
 
@@ -57,6 +58,13 @@ models = {
 
 
 drift_detectors = {
-    'mmd': (MMDDrift, [Real(low=0.000001, high=0.5, name="p_val")], [0.05]),
-    'lsdd': (LSDDDrift, [Real(low=0.000001, high=0.5, name="p_val")], [0.05])
+    # 'mmd': (MMDDrift, [Integer(low=100, high=5000, name="data_in_memory"),
+    #                    Real(low=0.01, high=0.5, name="p_val")], [100, .05]),
+    'adwin': (ADWIN, [], []),
+    'ddm': (DDM, [], []),
+    'eddm': (EDDM, [], []),
+    'hddma': (HDDM_A, [], []),
+    'hddmw': (HDDM_W, [], []),
+    'kswin': (KSWIN, [Real(low=0.00001, high=0.01, name="alpha")], [0.005]),
+    'ph': (PageHinkley, [], [])
 }

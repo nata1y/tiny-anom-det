@@ -9,6 +9,8 @@ import tensorflow
 from catch22 import catch22_all
 from skopt.callbacks import EarlyStopper
 
+from analysis.postanalysis import confusion_visualization
+
 
 class Stopper(EarlyStopper):
     def __call__(self, result):
@@ -251,3 +253,65 @@ def load_ucr_ts():
                             idx += 1
                             df.to_csv(f'results/ts_properties/ucr_ts_features_c22.csv')
                     my_file.close()
+
+
+def drift_metrics(y_true, y_pred):
+    fp = 0
+    latency = 0.0
+    misses = 0
+    drift_now = False
+    drift_detected = False
+    drift_start_idx = None
+    total_amount_drifts = 0
+
+    for idx, (i_true, i_pred) in enumerate(zip(y_true, y_pred)):
+        if i_true == 1:
+            if drift_start_idx:
+                misses += 1
+            total_amount_drifts += 1
+            drift_start_idx = idx
+        if i_pred == 1:
+            if not drift_start_idx:
+                fp += 1
+            else:
+                try:
+                    drift_stop_idx = y_true[drift_start_idx:].index(0)
+                except:
+                    drift_stop_idx = len(y_pred)
+                drift_length = drift_stop_idx - drift_start_idx
+                latency += (idx - drift_start_idx)  # / drift_length
+                drift_start_idx = None
+
+    if drift_start_idx:
+        misses += 1
+
+    if total_amount_drifts:
+        latency = latency / total_amount_drifts
+    return fp, latency, misses
+
+
+def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows):
+    try:
+        confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
+                                data_test['is_anomaly'].tolist(), y_pred_total,
+                                dataset, name, filename.replace('.csv', '') + '-drift', type, drift_windows)
+    except Exception as e:
+        raise e
+
+    try:
+        if name in ['sarima', 'es']:
+            model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test, drift_windows)
+        elif name in ['lstm']:
+            model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test, drift_windows)
+        # elif name == 'ensemble':
+        #     model.plot(dataset)
+        elif name == 'sr':
+            model.plot(dataset, type, filename, data_test, drift_windows)
+            # if model.dynamic_threshold:
+            #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
+        # elif name == 'dbscan':
+        #     plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
+        # elif name == 'seasonal_decomp':
+        #     model.plot(type, filename, )
+    except Exception as e:
+        print(e)
