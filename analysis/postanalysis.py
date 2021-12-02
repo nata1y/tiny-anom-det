@@ -11,9 +11,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import skopt
 import numpy as np
+import datetime
 
 
 def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, datatype, drift_windows):
+    try:
+        x = [datetime.datetime.strptime(x, '%m/%d/%Y %H:%M') for x in x]
+    except:
+        pass
     tp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 1]
     tn = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == pred_val[i] == 0]
     fp = [(x[i], y[i]) for i in range(len(true_val)) if true_val[i] == 0 and pred_val[i] == 1]

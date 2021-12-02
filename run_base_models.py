@@ -1,37 +1,29 @@
 import copy
 import os
-import time
 from collections import Counter
 
 import funcy
-from sklearn import metrics, preprocessing
+from sklearn import preprocessing
 
-from analysis.ts_analysis import machine_ts_to_features_correlation
 from models.decompose_model import DecomposeResidual
 from models.ensembel import Ensemble
 from utils import Stopper
 
 from sklearn.ensemble import IsolationForest
-from sklearn.metrics import confusion_matrix, f1_score
-from sklearn.mixture import GaussianMixture
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.neighbors import NearestNeighbors, LocalOutlierFactor, KNeighborsClassifier
+from sklearn.metrics import confusion_matrix
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import OneClassSVM
 from skopt import gp_minimize
 
-from analysis.postanalysis import confusion_visualization, weighted_f_score
-from models.nets import LSTM_autoencoder, Vae, SeqSeq
-from models.sr.main import detect_anomaly
+from analysis.postanalysis import confusion_visualization
+from models.nets import Vae, SeqSeq
 from models.statistical_models import SARIMA, ExpSmoothing
-from models.mogaal import MOGAAL
-from statsmodels.tsa.api import ExponentialSmoothing
-import pandas as pd
-import numpy as np
+from models.mogaal.mogaal import MOGAAL
 from sklearn.metrics import precision_recall_fscore_support
 
 from utils import create_dataset
-from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, DetectMode, SpectralResidual
-from alibi_detect.od import SpectralResidual as SR, OutlierVAE
+from models.sr.spectral_residual import DetectMode
+from alibi_detect.od import OutlierVAE
 from alibi_detect.od import OutlierSeq2Seq
 from pycaret.anomaly import *
 from model_collection import *
@@ -41,20 +33,22 @@ root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
 anomaly_window = 60
 step = 60
+data_in_memory_sz = 3000
 data_test = None
 
 
 def fit_base_model(model_params, for_optimization=True):
+    global  data_in_memory_sz
     percent_anomaly = 0.95
     # 50% train-test split
     if dataset == 'kpi':
-        data_train = data
+        data_train = data[-10000:]
         if not for_optimization:
             global data_test
     else:
         data_train, data_test = np.array_split(data, 2)
-        data_train = data_train
-        data_test = data_test[:5000]
+        data_train = data_train[-3000:]
+        data_test = data_test
     model = None
 
     if for_optimization:
@@ -66,10 +60,10 @@ def fit_base_model(model_params, for_optimization=True):
         data_in_memory = copy.deepcopy(data_train)
 
     # standardize
-    if name not in ['sarima', 'es', 'isolation_forest', 'lof']:
-        scaler = preprocessing.StandardScaler().fit(data_train[['value']])
-        data_train['value'] = scaler.transform(data_train[['value']])
-        data_test['value'] = scaler.transform(data_test[['value']])
+    # if name not in ['sarima', 'es', 'isolation_forest', 'lof']:
+    #     scaler = preprocessing.StandardScaler().fit(data_train[['value']])
+    #     data_train['value'] = scaler.transform(data_train[['value']])
+    #     data_test['value'] = scaler.transform(data_test[['value']])
 
     # create models with hyper-parameters
     if name == 'lof':
@@ -112,12 +106,16 @@ def fit_base_model(model_params, for_optimization=True):
     if name == 'mmd':
         model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
                          p_val=0.05)
+        data_in_memory_sz = model_params[0]
     elif name == 'lsdd':
-        model = LSDDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
+        model = LSDDDrift(data_train[['value']].astype('float32').to_numpy(), backend='tensorflow', data_type='time-series',
                           p_val=0.05)
+    elif name == 'mmd-online':
+        model = MMDDriftOnlineTF(data_train[['value']].astype('float32').to_numpy(), data_type='time-series',
+                                 window_size=15, ert=1)
 
-    drift_model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
-                           p_val=0.05)
+    # drift_model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
+    #                        p_val=0.05)
 
     if name in ['sarima', 'es']:
 
@@ -169,7 +167,7 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     else:
-        if name not in ['dbscan', 'isolation_forest', 'lof', 'mmd', 'lsdd']:
+        if name not in ['dbscan', 'isolation_forest', 'lof', 'mmd', 'lsdd', 'mmd-online']:
             try:
                 X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
@@ -196,6 +194,7 @@ def fit_base_model(model_params, for_optimization=True):
     f1 = []
     all_labels = []
     y_pred_total = []
+    y_windows = []
     idx = 0
     stacked_res = data_train[['timestamp', 'value']]
 
@@ -206,7 +205,7 @@ def fit_base_model(model_params, for_optimization=True):
         try:
             start_time = time.time()
             window = data_test.iloc[start:start + anomaly_window]
-            data_in_memory = pd.concat([data_in_memory, window])[-3000:]
+            data_in_memory = pd.concat([data_in_memory, window])[-data_in_memory_sz:]
             # if deseasonalize:
             #     window_ = copy.deepcopy(data_in_memory)
             #     window_['value'] = window_['value'] + shift
@@ -218,11 +217,11 @@ def fit_base_model(model_params, for_optimization=True):
             X, y = window['value'], window['is_anomaly']
             if y.tolist():
                 # check for drifts #####################################################################################
-                print(window.shape)
-                drift_pred = drift_model.predict(window[['value']].to_numpy())
-                if drift_pred['data']['is_drift'] == 1:
-                    # drift_windows += window['timestamp'].tolist()
-                    drift_windows.append((window['timestamp'].min(), window['timestamp'].max()))
+                # if not for_optimization:
+                #     drift_pred = drift_model.predict(window[['value']].to_numpy())
+                #     if drift_pred['data']['is_drift'] == 1:
+                #         # drift_windows += window['timestamp'].tolist()
+                #         drift_windows.append((window['timestamp'].min(), window['timestamp'].max()))
 
                 # then apply anomaly detectors #########################################################################
                 if name in ['sarima']:
@@ -241,19 +240,22 @@ def fit_base_model(model_params, for_optimization=True):
                     if model.dynamic_threshold:
                         try:
                             # update dynamic threshold here
-                            y_pred = [1 if x else 0 for x in model.detect_dynamic_threshold(window[['value', 'timestamp']])['isAnomaly'].tolist()]
+                            y_pred = [1 if x else 0 for x in model.detect_dynamic_threshold(
+                                window[['value', 'timestamp']])['isAnomaly'].tolist()]
                         except Exception as e:
                             print(e)
                             y_pred = [0 for _ in range(window.shape[0])]
                     else:
                         try:
-                            y_pred = [1 if x else 0 for x in model.detect(anomaly_window)['isAnomaly'].tolist()[-len(y):]]
+                            y_pred = [1 if x else 0 for x in model.detect(anomaly_window)
+                                                             ['isAnomaly'].tolist()[-len(y):]]
                         except Exception as e:
                             print(e)
                             y_pred = [0 for _ in range(window.shape[0])]
 
                 elif name == 'lstm':
-                    y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1), window['timestamp'])
+                    y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1),
+                                           window['timestamp'])
                 elif name == 'mogaal':
                     y_pred = model.predict(window)
                     print(y_pred)
@@ -303,6 +305,24 @@ def fit_base_model(model_params, for_optimization=True):
                     iforest = create_model('iforest', fraction=model_params[0])
                     iforest_results = assign_model(iforest)
                     y_pred = iforest_results['Anomaly'].tolist()[-len(y):]
+                elif name in ['lsdd', 'mmd', 'mmd-online']:
+                    drift_pred = model.predict(window[['value']].astype('float32').to_numpy())
+                    if drift_pred['data']['is_drift'] == 1 and not for_optimization:
+                        # drift_windows += window['timestamp'].tolist()
+                        time_window = [datetime.datetime.strptime(x, '%m/%d/%Y %H:%M')
+                                       for x in window['timestamp'].tolist()]
+                        wd = (min(time_window), max(time_window))
+                        drift_windows.append(wd)
+
+                    if drift_pred['data']['is_drift'] == 1 and y.tolist().count(1) > 0:
+                        y_pred = y.tolist()
+                    elif drift_pred['data']['is_drift'] == 1 and y.tolist().count(1) == 0:
+                        y_pred = [1 for _ in range(len(y.tolist()))]
+                    elif drift_pred['data']['is_drift'] == 0 and y.tolist().count(1) == 0:
+                        y_pred = [0 for _ in range(len(y.tolist()))]
+                    elif drift_pred['data']['is_drift'] == 0 and y.tolist().count(1) > 0:
+                        y_pred = [0 for _ in range(len(y.tolist()))]
+
                 else:
                     y_pred = model.predict(window[['value', 'timestamp']])
 
@@ -312,28 +332,51 @@ def fit_base_model(model_params, for_optimization=True):
                     pass
 
                 idx += 1
-                if anomaly_window == step:
-                    # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
-                    common = Counter(funcy.lflatten(y_pred)[:window.shape[0]]).most_common(1)[0][0]
-                    y_pred_total += [0 if val == common else 1 for val in funcy.lflatten(y_pred)[:window.shape[0]]]
-                    if name == 'dbscan':
-                        all_labels += [(copy.deepcopy(model.labels_[-len(y):]), core_smpls)]
-                else:
-                    if y_pred_total:
-                        if len(y_pred) == anomaly_window:
-                            y_pred_total = y_pred_total[:-anomaly_window + step] + \
-                                           [0 if (o != 1 and n != 1) else 1 for o, n in
-                                            zip(y_pred_total[-anomaly_window + step:] + [0 for _ in range(step)],
-                                                funcy.lflatten(y_pred))]
-                        else:
-                            y_pred_total = y_pred_total[:-anomaly_window + step] + \
-                                           [0 if (o != 1 and n != 1) else 1 for o, n in
-                                            zip(y_pred_total[-anomaly_window + step:] +
-                                                [0 for _ in range(step - (anomaly_window - len(y_pred)))],
-                                                funcy.lflatten(y_pred))]
-                            break
+                if name not in ['lsdd', 'mmd', 'mmd-online']:
+                    if anomaly_window == step:
+                        # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
+                        common = Counter(funcy.lflatten(y_pred)[:window.shape[0]]).most_common(1)[0][0]
+                        y_pred_total += [0 if val == common else 1 for val in funcy.lflatten(y_pred)[:window.shape[0]]]
+                        if name == 'dbscan':
+                            all_labels += [(copy.deepcopy(model.labels_[-len(y):]), core_smpls)]
                     else:
-                        y_pred_total = [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)]
+                        if y_pred_total:
+                            if len(y_pred) == anomaly_window:
+                                y_pred_total = y_pred_total[:-anomaly_window + step] + \
+                                               [0 if (o != 1 and n != 1) else 1 for o, n in
+                                                zip(y_pred_total[-anomaly_window + step:] + [0 for _ in range(step)],
+                                                    funcy.lflatten(y_pred))]
+                            else:
+                                y_pred_total = y_pred_total[:-anomaly_window + step] + \
+                                               [0 if (o != 1 and n != 1) else 1 for o, n in
+                                                zip(y_pred_total[-anomaly_window + step:] +
+                                                    [0 for _ in range(step - (anomaly_window - len(y_pred)))],
+                                                    funcy.lflatten(y_pred))]
+                                break
+                        else:
+                            y_pred_total = [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)]
+                else:
+                    if anomaly_window == step:
+                        # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
+                        y_pred_total += [val for val in funcy.lflatten(y_pred)[:window.shape[0]]]
+                    else:
+                        anomaly_window_ = data_in_memory
+                        step_ = anomaly_window
+                        if y_pred_total:
+                            if len(y_pred) == anomaly_window_:
+                                y_pred_total = y_pred_total[:-anomaly_window_ + step_] + \
+                                               [0 if (o != 1 and n != 1) else 1 for o, n in
+                                                zip(y_pred_total[-anomaly_window_ + step_:] + [0 for _ in range(step_)],
+                                                    funcy.lflatten(y_pred))]
+                            else:
+                                y_pred_total = y_pred_total[:-anomaly_window_ + step_] + \
+                                               [0 if (o != 1 and n != 1) else 1 for o, n in
+                                                zip(y_pred_total[-anomaly_window_ + step_:] +
+                                                    [0 for _ in range(step_ - (anomaly_window_ - len(y_pred)))],
+                                                    funcy.lflatten(y_pred))]
+                                break
+                        else:
+                            y_pred_total = [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)]
 
                 end_time = time.time()
                 pred_time.append((end_time - start_time))
@@ -341,7 +384,7 @@ def fit_base_model(model_params, for_optimization=True):
             raise e
 
     joint_sz = min(data_test.shape[0], len(y_pred_total))
-    met_total = precision_recall_fscore_support(data_test[:joint_sz]['is_anomaly'], y_pred_total[:joint_sz], average='binary')
+    met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
     # Do f1 score smoothing
     # smoothed_f1 = pd.DataFrame(f1).ewm(com=0.5).mean()
 
@@ -349,7 +392,6 @@ def fit_base_model(model_params, for_optimization=True):
         # f = weighted_f_score(data_test['is_anomaly'].tolist(), y_pred_total, model.get_pred_mean(), data_test['value'].tolist())
         # print(f"My f-score: {f} vs standard f score {met_total[2]}")
         print(f"standard f score {met_total[2]}")
-
 
     try:
         tn, fp, fn, tp = confusion_matrix(data_test['is_anomaly'], y_pred_total).ravel()
@@ -362,14 +404,14 @@ def fit_base_model(model_params, for_optimization=True):
         # visualize(data)
 
         try:
-            stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+            stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
         except:
             stats = pd.DataFrame([])
 
         try:
             confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
                                     data_test['is_anomaly'].tolist(), y_pred_total,
-                                    dataset, name, filename.replace('.csv', ''), type, drift_windows)
+                                    dataset, name, filename.replace('.csv', '') + '-drift', type, drift_windows)
         except Exception as e:
             raise e
 
@@ -406,7 +448,7 @@ def fit_base_model(model_params, for_optimization=True):
             'prediction_time': np.mean(pred_time),
             'total_points': data_test.shape[0]
         }, ignore_index=True)
-        stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
+        stats.to_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv', index=False)
 
     # return specificity if no anomalies, else return f1 score
     if data_test['is_anomaly'].tolist().count(1) == 0:
@@ -423,17 +465,19 @@ if __name__ == '__main__':
                           # ('NAB', 'relevant'),
                           # ('yahoo', 'synthetic')
         for name, (model, bo_space, def_params) in models.items():
-            train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
+            train_data_path = root_path + '/datasets/machine_metrics/nab_drift/'
+            # root_path + '/datasets/' + dataset + '/' + type + '/'
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
             except:
-                stats = pd.DataFrame([])
+                statf = pd.DataFrame([])
             for filename in os.listdir(train_data_path):
+                print(filename)
                 f = os.path.join(train_data_path, filename)
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
-                machine_data_path = f'datasets/machine_metrics/{type}/'
-                if os.path.isfile(f) and filename in os.listdir(machine_data_path) and \
-                        (stats.shape[0] == 0 or filename.replace('.csv', '') not in stats['dataset'].tolist()):
+                machine_data_path = f'datasets/machine_metrics/nab_drift/'
+                if os.path.isfile(f) and filename in os.listdir(machine_data_path):
+                        # and (statf.shape[0] == 0 or filename.replace('.csv', '') not in statf['dataset'].tolist()):
                     # and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
                     print(f"Training model {name} with data {filename}")
                     data = pd.read_csv(f)
@@ -447,10 +491,10 @@ if __name__ == '__main__':
                     # except Exception as e:
                     #     raise e
                     #     print(f'Error on {filename}')
-                    # continue
+                    # quit()
 
                     try:
-                        if name not in ['knn', 'mogaal', 'mmd', 'lsdd']:
+                        if name not in ['knn', 'mogaal', 'mmd-online']:
                         ################ Bayesian optimization ###################################################
                             bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
                                                     random_state=13, verbose=False, x0=def_params)
@@ -461,5 +505,4 @@ if __name__ == '__main__':
                         else:
                             fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
-                        raise e
                         print(f'Error on {filename}')
