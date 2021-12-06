@@ -46,7 +46,10 @@ def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, d
 
     pyplot.savefig(f'results/imgs/{dataset}/{datatype}/{name}/{name}_{filename}.png')
     pyplot.clf()
+    pyplot.close('all')
     plt.close('all')
+    del fig
+    del ax
 
     # errors = pd.Series(v for _, v in sorted(fp + fn, key=lambda x: x[0]))
     # is_whitenoise(errors)

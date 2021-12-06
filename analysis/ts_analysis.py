@@ -8,7 +8,7 @@ def machine_ts_to_features_correlation():
     correlation_df = pd.DataFrame([])
     idx = 0
     exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
-    for dataset, subsets in [('NAB', ['relevant'])]: #, ('kpi', ['train'])]:
+    for dataset, subsets in [('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]: #, ('kpi', ['train'])]:
         #, ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
         for tss in subsets:
             print(tss)
@@ -19,7 +19,7 @@ def machine_ts_to_features_correlation():
                 sz = 1024
             dbscan = pd.read_csv(
                 f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
-                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_dbscan_machine.csv')
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_dbscan.csv')
 
             try:
                 lstm = pd.read_csv(
@@ -59,8 +59,8 @@ def machine_ts_to_features_correlation():
                                                             dbscan['dataset']):
 
                 rep_val = 'f1'
-                # if str(ts) != 'nan' and 'flatline' not in ts:
-                if str(ts) != 'nan' and ts + '.csv' in os.listdir(machine_data_path):
+                if str(ts) != 'nan' and 'flatline' not in ts:
+                # if str(ts) != 'nan' and ts + '.csv' in os.listdir(machine_data_path):
                     series = pd.read_csv('datasets/' + dataset + '/' + tss + '/' + ts + '.csv')
                     series.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
                     if dataset != 'kpi':
@@ -90,6 +90,6 @@ def machine_ts_to_features_correlation():
                             correlation_df.loc[idx, col] = ts_properties_fforma.loc[ts + '.csv', col]
                     idx += 1
 
-    correlation_df.to_csv(f'results/ts_properties/f1_to_all_machine.csv')
+    correlation_df.to_csv(f'results/ts_properties/f1_to_yahoo.csv')
     res = correlation_df.corr(method='pearson')
-    res.to_csv(f'results/ts_properties/f1_to_all_machine_corr.csv')
+    res.to_csv(f'results/ts_properties/f1_to_yahoo.csv')

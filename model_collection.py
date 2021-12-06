@@ -5,6 +5,7 @@ from skopt.space import Categorical, Integer, Real
 from skmultiflow.drift_detection.adwin import ADWIN
 from tslearn.metrics import dtw
 
+from models.naive import NaiveDetector
 from models.nets import LSTM_autoencoder
 from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, SpectralResidual
 from models.statistical_models import SARIMA
@@ -41,6 +42,10 @@ models = {
           #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
           #                           Integer(low=1, high=100, name='sensitivity')],
           #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          'naive': (NaiveDetector, [Integer(low=5, high=1000, name='k'), Categorical([0.0, 1.0], name='u'),
+                                    Real(low=0.01, high=100.0, name='c'), Real(low=0.01, high=100.0, name='b'),
+                                    Categorical([True, False], name='useabs')],
+                    [30, 1, 1.0, 1.0, False])
           # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
           # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
@@ -60,7 +65,7 @@ models = {
 drift_detectors = {
     # 'mmd': (MMDDrift, [Integer(low=100, high=5000, name="data_in_memory"),
     #                    Real(low=0.01, high=0.5, name="p_val")], [100, .05]),
-    'adwin': (ADWIN, [], []),
+    # 'adwin': (ADWIN, [], []),
     'ddm': (DDM, [], []),
     'eddm': (EDDM, [], []),
     'hddma': (HDDM_A, [], []),

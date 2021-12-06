@@ -226,7 +226,7 @@ def sq_euclidian(a, b):
 
 
 def load_ucr_ts():
-    data_path = 'datasets/ucr_ts/'
+    data_path = 'datasets/ucr/'
     df = pd.read_csv('results/ts_properties/ucr_ts_features_c22.csv')
     idx = df.shape[0]
     for dirname in os.listdir(data_path):
@@ -294,7 +294,7 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
     try:
         confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
                                 data_test['is_anomaly'].tolist(), y_pred_total,
-                                dataset, name, filename.replace('.csv', '') + '-drift', type, drift_windows)
+                                dataset, name, filename.replace('.csv', '') + '_point', type, drift_windows)
     except Exception as e:
         raise e
 
@@ -315,3 +315,34 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
         #     model.plot(type, filename, )
     except Exception as e:
         print(e)
+
+
+def relable_yahoo():
+    for ds in ['train', 'test']:
+        data_path = f'datasets/kpi/{ds}/'
+        for filename in os.listdir(data_path):
+            print(filename)
+            f = os.path.join(data_path, filename)
+            if os.path.isfile(f) and filename:
+                df = pd.read_csv(f)
+                labels = df['is_anomaly'].tolist()
+                labels_new = []
+                drift_start = False
+                for idx in range(len(labels)):
+                    if not drift_start and labels[idx] == 0:
+                        labels_new.append(0)
+                    elif not drift_start and labels[idx] == 1:
+                        end = labels[idx:].index(0) if 0 in labels[idx:] else len(labels)
+                        if end - idx > 50:
+                            drift_start = True
+                            labels_new.append(1)
+                        else:
+                            labels_new.append(0)
+                    elif drift_start and labels[idx] == 1:
+                        labels_new.append(0)
+                    elif drift_start and labels[idx] == 0:
+                        labels_new = labels_new[:(idx - 1)] + [1, 0]
+                        drift_start = False
+
+                df['is_anomaly'] = labels_new
+                df.to_csv(f'datasets/kpi/drift/{ds}/{filename}')

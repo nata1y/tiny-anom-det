@@ -5,9 +5,10 @@ from collections import Counter
 import funcy
 from sklearn import preprocessing
 
+from analysis.ts_analysis import machine_ts_to_features_correlation
 from models.decompose_model import DecomposeResidual
 from models.ensembel import Ensemble
-from utils import Stopper, drift_metrics, plot_general
+from utils import Stopper, drift_metrics, plot_general, relable_yahoo
 
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import confusion_matrix
@@ -96,6 +97,8 @@ def fit_base_model(model_params, for_optimization=True):
         model = DecomposeResidual()
     elif name == 'ensemble':
         model = Ensemble(filename=filename, anomaly_window=anomaly_window)
+    elif name == 'naive':
+        model = NaiveDetector(model_params[0], model_params[1], model_params[2], model_params[3], model_params[4])
     elif name == 'mogaal':
         model = MOGAAL(dataset=(dataset, type, filename))
         # need anomalies to properly train mogaal?
@@ -174,7 +177,7 @@ def fit_base_model(model_params, for_optimization=True):
         print(f"Trained model {name} on {filename} for {diff}")
     else:
         if name not in ['dbscan', 'isolation_forest', 'lof', 'mmd', 'lsdd', 'mmd-online',
-                        'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph']:
+                        'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph', 'naive']:
             try:
                 X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
@@ -242,6 +245,12 @@ def fit_base_model(model_params, for_optimization=True):
                     model.fit(stacked_res, dataset)
                 elif name == 'ensemble':
                     y_pred = model.predict(window)
+                elif name == 'naive':
+                    # enough data in window
+                    if data_in_memory.shape[0] <= model.k:
+                        y_pred = [0]
+                    else:
+                        y_pred = [model.predict(data_in_memory[['value']])]
                 elif name == 'sr':
                     model.__series__ = data_in_memory[['value', 'timestamp']]
                     if model.dynamic_threshold:
@@ -341,8 +350,11 @@ def fit_base_model(model_params, for_optimization=True):
                                 drift_windows.append((datetime.datetime.strptime(row['timestamp'], '%m/%d/%Y %H:%M'),
                                                       datetime.datetime.strptime(row['timestamp'], '%m/%d/%Y %H:%M')))
                             except:
-                                drift_windows.append((datetime.datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S'),
-                                                      datetime.datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S')))
+                                try:
+                                    drift_windows.append((datetime.datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S'),
+                                                          datetime.datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S')))
+                                except:
+                                    drift_windows.append((row['timestamp'], row['timestamp']))
                             y_pred.append(1)
                         else:
                             y_pred.append(0)
@@ -420,7 +432,7 @@ def fit_base_model(model_params, for_optimization=True):
 
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
             except:
                 stats = pd.DataFrame([])
 
@@ -439,7 +451,7 @@ def fit_base_model(model_params, for_optimization=True):
                 'prediction_time': np.mean(pred_time),
                 'total_points': data_test.shape[0]
             }, ignore_index=True)
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv', index=False)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
         # return specificity if no anomalies, else return f1 score
         if data_test['is_anomaly'].tolist().count(1) == 0:
             return 1.0 - specificity
@@ -450,7 +462,7 @@ def fit_base_model(model_params, for_optimization=True):
         fp, latency, misses = drift_metrics(data_test['is_anomaly'].tolist(), y_pred_total)
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_point.csv')
             except:
                 stats = pd.DataFrame([])
 
@@ -465,38 +477,44 @@ def fit_base_model(model_params, for_optimization=True):
                 'total_points': data_test.shape[0]
             }, ignore_index=True)
 
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv', index=False)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_point.csv', index=False)
         return latency + fp + misses
 
 
 if __name__ == '__main__':
+    if test_drifts:
+        learners_to_loop = drift_detectors
+    else:
+        learners_to_loop = models
+
     for dataset, type in [('NAB', 'relevant')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
                           # ('yahoo', 'A3Benchmark'),
                           # ('NAB', 'relevant'),
                           # ('yahoo', 'synthetic')
-        for name, (model, bo_space, def_params) in drift_detectors.items():
-            train_data_path = root_path + '/datasets/machine_metrics/nab_drift/'
+        for name, (model, bo_space, def_params) in learners_to_loop.items():
+            train_data_path = root_path + '/datasets/machine_metrics/nab_point/'
             # train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
+            # train_data_path = root_path + '/datasets/' + dataset + '/drift/' + type + '/'
             try:
-                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift.csv')
+                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
             except:
                 statf = pd.DataFrame([])
             for filename in os.listdir(train_data_path):
                 print(filename)
                 f = os.path.join(train_data_path, filename)
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
-                machine_data_path = f'datasets/machine_metrics/relevant/'
-                if os.path.isfile(f) and filename in os.listdir(machine_data_path):
-                        # and (statf.shape[0] == 0 or filename.replace('.csv', '') not in statf['dataset'].tolist()):
+                # machine_data_path = f'datasets/machine_metrics/relevant/'
+                if os.path.isfile(f) and filename\
+                        and (statf.shape[0] == 0 or filename.replace('.csv', '') not in statf['dataset'].tolist()):
                     # and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
                     print(f"Training model {name} with data {filename}")
                     data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
 
                     if dataset == 'kpi':
-                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/' + 'test' + '/', filename))
+                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/drift/' + 'test' + '/', filename))
 
                     # try:
                     #     fit_base_model(def_params, for_optimization=False)
