@@ -41,14 +41,15 @@ def fit_base_model(model_params, for_optimization=True):
     global data_in_memory_sz
     percent_anomaly = 0.95
     # 50% train-test split
-    if dataset == 'kpi':
-        data_train = data[-10000:]
-        if not for_optimization:
-            global data_test
-    else:
-        data_train, data_test = copy.deepcopy(data), copy.deepcopy(data) #np.array_split(data, 2)
-        data_train = data_train
-        data_test = data_test
+    data_train, data_test = copy.deepcopy(data), copy.deepcopy(data)
+    # if dataset == 'kpi':
+    #     data_train = data
+    #     if not for_optimization:
+    #         global data_test
+    # else:
+    #     data_train, data_test = copy.deepcopy(data), copy.deepcopy(data) #np.array_split(data, 2)
+    #     data_train = data_train
+    #     data_test = data_test
     model = None
 
     if for_optimization:
@@ -110,19 +111,19 @@ def fit_base_model(model_params, for_optimization=True):
                          p_val=0.05)
         data_in_memory_sz = model_params[0]
     elif name == 'adwin':
-        model = ADWIN()
+        model = ADWIN(delta=model_params[0])
     elif name == 'ddm':
-        model = DDM()
+        model = DDM(out_control_level=model_params[0])
     elif name == 'eddm':
         model = EDDM()
     elif name == 'hddma':
-        model = HDDM_A()
+        model = HDDM_A(drift_confidence=model_params[0])
     elif name == 'hddmw':
-        model = HDDM_W()
+        model = HDDM_W(drift_confidence=model_params[0], lambda_option=model_params[1])
     elif name == 'kswin':
-        model = KSWIN()
+        model = KSWIN(alpha=model_params[0], window_size=model_params[1])
     elif name == 'ph':
-        model = PageHinkley()
+        model = PageHinkley(delta=model_params[0], threshold=model_params[1])
     # drift_model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
     #                        p_val=0.05)
 
@@ -432,7 +433,7 @@ def fit_base_model(model_params, for_optimization=True):
 
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_point.csv')
             except:
                 stats = pd.DataFrame([])
 
@@ -451,7 +452,7 @@ def fit_base_model(model_params, for_optimization=True):
                 'prediction_time': np.mean(pred_time),
                 'total_points': data_test.shape[0]
             }, ignore_index=True)
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_point.csv', index=False)
         # return specificity if no anomalies, else return f1 score
         if data_test['is_anomaly'].tolist().count(1) == 0:
             return 1.0 - specificity
@@ -462,7 +463,7 @@ def fit_base_model(model_params, for_optimization=True):
         fp, latency, misses = drift_metrics(data_test['is_anomaly'].tolist(), y_pred_total)
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_point.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
             except:
                 stats = pd.DataFrame([])
 
@@ -477,7 +478,7 @@ def fit_base_model(model_params, for_optimization=True):
                 'total_points': data_test.shape[0]
             }, ignore_index=True)
 
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_point.csv', index=False)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
         return latency + fp + misses
 
 
@@ -487,18 +488,21 @@ if __name__ == '__main__':
     else:
         learners_to_loop = models
 
-    for dataset, type in [('NAB', 'relevant')]:
+    for dataset, type in [('NAB', 'relevant'), ('yahoo', 'real')]:
+                          # ('kpi', 'train'), ('kpi', 'test')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
                           # ('yahoo', 'A3Benchmark'),
                           # ('NAB', 'relevant'),
                           # ('yahoo', 'synthetic')
         for name, (model, bo_space, def_params) in learners_to_loop.items():
-            train_data_path = root_path + '/datasets/machine_metrics/nab_point/'
             # train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
-            # train_data_path = root_path + '/datasets/' + dataset + '/drift/' + type + '/'
+            if dataset == 'NAB':
+                train_data_path = root_path + '/datasets/machine_metrics/nab_point/'
+            else:
+                train_data_path = root_path + '/datasets/' + dataset + '/point/' + type + '/'
             try:
-                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_point.csv')
             except:
                 statf = pd.DataFrame([])
             for filename in os.listdir(train_data_path):
@@ -512,28 +516,32 @@ if __name__ == '__main__':
                     print(f"Training model {name} with data {filename}")
                     data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+                    if data['is_anomaly'].tolist().count(1) == 0:
+                        continue
 
-                    if dataset == 'kpi':
-                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/drift/' + 'test' + '/', filename))
-
-                    # try:
-                    #     fit_base_model(def_params, for_optimization=False)
-                    # except Exception as e:
-                    #     raise e
-                    #     print(f'Error on {filename}')
-                    # quit()
+                    # if dataset == 'kpi':
+                    #     data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/drift/' + 'test' + '/', filename))
+                    #     # print(data_test['is_anomaly'].tolist().count(1))
+                    #     # continue
 
                     try:
-                        if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
-                        ################ Bayesian optimization ###################################################
-                            bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                                                    random_state=13, verbose=False, x0=def_params)
-
-                            print(f"Found hyper parameters for {name}: {bo_result.x}")
-
-                            fit_base_model(bo_result.x, for_optimization=False)
-                        else:
-                            fit_base_model(def_params, for_optimization=False)
+                        fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
                         raise e
                         print(f'Error on {filename}')
+                    continue
+
+                    # try:
+                    #     if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
+                    #     ################ Bayesian optimization ###################################################
+                    #         bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                    #                                 random_state=13, verbose=False, x0=def_params)
+                    #
+                    #         print(f"Found hyper parameters for {name}: {bo_result.x}")
+                    #
+                    #         fit_base_model(bo_result.x, for_optimization=False)
+                    #     else:
+                    #         fit_base_model(def_params, for_optimization=False)
+                    # except Exception as e:
+                    #     raise e
+                    #     print(f'Error on {filename}')

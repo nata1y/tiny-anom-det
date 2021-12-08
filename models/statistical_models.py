@@ -342,9 +342,9 @@ class ExpSmoothing:
         simulations['upper value'] = simulations.max(axis=1)
         simulations['lower value'] = simulations.min(axis=1)
         simulations['pred'] = pred
-        self.full_pred.append(simulations[['upper value', 'lower value', 'pred']])
         simulations['timestamp'] = newdf.index
         simulations = self._get_time_index(simulations)
+        self.full_pred.append(simulations[['upper value', 'lower value', 'pred']])
 
         for idx, row in simulations.iterrows():
             try:
@@ -363,12 +363,14 @@ class ExpSmoothing:
     def plot(self, y, dataset, datatype, filename, full_test_data_, drift_windows):
         full_test_data = self._get_time_index(full_test_data_)
         ax = full_test_data['value'].plot(label='observed')
+        print(self.full_pred)
 
         for w, fpred in enumerate(self.full_pred):
             ax.fill_between(fpred.index,
                             fpred['lower value'],
                             fpred['upper value'], color='k', alpha=.2)
 
+            print(fpred)
             fpred['pred'].plot(label=f'Window {w} forecast', alpha=.7, figsize=(14, 7))
             for idx, pred in fpred.iterrows():
                 try:

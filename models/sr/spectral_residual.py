@@ -103,6 +103,7 @@ class SpectralResidual:
 
         x_fp, y_fp = [], []
         x_fn, y_fn = [], []
+        dataset = dataset[~dataset.index.duplicated(keep='first')]
         for tm, row in self.history.iterrows():
             if tm in datatest.index:
                 if row['score'] > self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 0:
@@ -116,6 +117,13 @@ class SpectralResidual:
             fig.add_trace(go.Scatter(x=x_fp, y=y_fp, name='FP', mode="markers"))
         if x_fn:
             fig.add_trace(go.Scatter(x=x_fn, y=y_fn, name='FN', mode="markers"))
+
+        for wd in drift_windows:
+            fig.add_trace(go.Scatter(x=[wd[0], wd[1], wd[1], wd[0]], y=[self.history['score'].min(),
+                                                                        self.history['score'].min(),
+                                                                        self.history['score'].max(),
+                                                                        self.history['score'].max()],
+                                     fill='toself'))  # fill to trace0 y
 
         fig.update_layout(showlegend=True, title='Saliency map')
         fig.write_image(

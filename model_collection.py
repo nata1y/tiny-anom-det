@@ -8,8 +8,7 @@ from tslearn.metrics import dtw
 from models.naive import NaiveDetector
 from models.nets import LSTM_autoencoder
 from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, SpectralResidual
-from models.statistical_models import SARIMA
-
+from models.statistical_models import SARIMA, ExpSmoothing
 
 models = {
           # 'mogaal': (MOGAAL, [], []),
@@ -27,7 +26,7 @@ models = {
           # no norm
           # 'isolation_forest': (IsolationForest, [Integer(low=1, high=1000, name='n_estimators')], [100]),
           # 'isolation_forest': (IsolationForest, [Real(low=0.01, high=0.99, name='fraction')], [0.1]),
-          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [10]),
+          # 'es': (ExpSmoothing, [Integer(low=10, high=1000, name='sims')], [100]),
           # 'sr_alibi': (SR, [Real(low=0.01, high=10.0, name='threshold'),
           #                   Integer(low=1, high=anomaly_window, name='window_amp'),
           #                   Integer(low=1, high=anomaly_window, name='window_local'),
@@ -37,11 +36,11 @@ models = {
           #              [1.0, 20, 20, 10, 5, 0.95]),
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
-          # 'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
-          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
-          #                           Integer(low=1, high=100, name='sensitivity')],
-          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          'sr': (SpectralResidual, [Real(low=0.01, high=0.99, name='THRESHOLD'),
+                                    Integer(low=1, high=30, name='MAG_WINDOW'),
+                                    Integer(low=5, high=1000, name='SCORE_WINDOW'),
+                                    Integer(low=1, high=100, name='sensitivity')],
+                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           'naive': (NaiveDetector, [Integer(low=5, high=1000, name='k'), Categorical([0.0, 1.0], name='u'),
                                     Real(low=0.01, high=100.0, name='c'), Real(low=0.01, high=100.0, name='b'),
                                     Categorical([True, False], name='useabs')],
@@ -65,11 +64,14 @@ models = {
 drift_detectors = {
     # 'mmd': (MMDDrift, [Integer(low=100, high=5000, name="data_in_memory"),
     #                    Real(low=0.01, high=0.5, name="p_val")], [100, .05]),
-    # 'adwin': (ADWIN, [], []),
-    'ddm': (DDM, [], []),
+    'adwin': (ADWIN, [Real(low=0.00001, high=0.9, name="delta")], [0.002]),
+    'ddm': (DDM, [Real(low=1.0, high=20.0, name="out_control_level")], [3.0]),
     'eddm': (EDDM, [], []),
-    'hddma': (HDDM_A, [], []),
-    'hddmw': (HDDM_W, [], []),
-    'kswin': (KSWIN, [Real(low=0.00001, high=0.01, name="alpha")], [0.005]),
-    'ph': (PageHinkley, [], [])
+    'hddma': (HDDM_A, [Real(low=0.00001, high=0.9, name="drift_conf")], [0.001]),
+    'hddmw': (HDDM_W, [Real(low=0.00001, high=0.9, name="drift_conf"), Real(low=0.00001, high=1.0, name="lambda")],
+              [0.001, 0.05]),
+    'kswin': (KSWIN, [Real(low=0.0001, high=0.01, name="alpha"),
+                      Integer(low=100, high=1000, name='window_size')], [0.005, 1000]),
+    'ph': (PageHinkley, [Real(low=0.00001, high=0.9, name="delta"), Integer(low=1, high=1000, name='threshold')],
+           [0.005, 50])
 }

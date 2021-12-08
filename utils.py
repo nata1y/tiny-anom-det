@@ -314,12 +314,13 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
         # elif name == 'seasonal_decomp':
         #     model.plot(type, filename, )
     except Exception as e:
+        raise e
         print(e)
 
 
 def relable_yahoo():
-    for ds in ['train', 'test']:
-        data_path = f'datasets/kpi/{ds}/'
+    for ds in ['real']:
+        data_path = f'datasets/yahoo/{ds}/'
         for filename in os.listdir(data_path):
             print(filename)
             f = os.path.join(data_path, filename)
@@ -333,7 +334,7 @@ def relable_yahoo():
                         labels_new.append(0)
                     elif not drift_start and labels[idx] == 1:
                         end = labels[idx:].index(0) if 0 in labels[idx:] else len(labels)
-                        if end - idx > 50:
+                        if end - idx <= 50:
                             drift_start = True
                             labels_new.append(1)
                         else:
@@ -345,4 +346,4 @@ def relable_yahoo():
                         drift_start = False
 
                 df['is_anomaly'] = labels_new
-                df.to_csv(f'datasets/kpi/drift/{ds}/{filename}')
+                df.to_csv(f'datasets/yahoo/point/{ds}/{filename}')
