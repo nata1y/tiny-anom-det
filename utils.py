@@ -303,8 +303,8 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
             model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test, drift_windows)
         elif name in ['lstm']:
             model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test, drift_windows)
-        # elif name == 'ensemble':
-        #     model.plot(dataset)
+        elif name == 'dp':
+            model.plot(data_test[['timestamp', 'value']], type, data_test)
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test, drift_windows)
             # if model.dynamic_threshold:

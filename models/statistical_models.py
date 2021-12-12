@@ -1,5 +1,6 @@
 # from https://github.com/RuoyunCarina-D/Anomly-Detection-SARIMA/blob/master/SARIMA.py
 import copy
+import datetime
 import itertools
 import math
 from collections import Counter
@@ -25,7 +26,7 @@ class SARIMA:
     model = None
     dataset = ''
 
-    def __init__(self, conf_top=1.5, conf_botton=1.5, train_size=3000):
+    def __init__(self, conf_top=1.1, conf_botton=1.1, train_size=3000):
         self.full_pred = []
         self.mean_fluctuation = []
         self.monitoring_pred = []
@@ -34,6 +35,8 @@ class SARIMA:
         self.threshold_modelling = False
         self.train_size = train_size
         self.latest_train_snippest = pd.DataFrame([])
+        self.result_memory_size = 700
+        self.memory_threshold = 1000
 
     def _get_time_index(self, data):
         if self.dataset in ['yahoo', 'kpi']:
@@ -52,7 +55,7 @@ class SARIMA:
             data = data.asfreq('T')
             if self.model:
                 dti = pd.DataFrame([])
-                dti.loc[:, 'timestamp'] = pd.date_range(self.model.fittedvalues.index.max() + pd.Timedelta(minutes=1),
+                dti.loc[:, 'timestamp'] = pd.date_range(self.model.fittedvalues.index.max() + pd.Timedelta(minutes=5),
                                                         periods=data.shape[0], freq="T")
                 dti.set_index('timestamp', inplace=True)
                 dti['value'] = None
@@ -70,14 +73,6 @@ class SARIMA:
         if dataset != 'retrain':
             self.dataset = dataset
             data = self._get_time_index(data)
-        ############################################# Seasaonl decomposing #############################################
-        # print(data)
-        # res = seasonal_decompose(data.interpolate(), model='additive', freq=period)
-        # res.plot()
-        # plt.savefig(f'results/imgs/preanalysis/{dataset}_add_decomp.png')
-        # quit()
-
-        ############################################# Model Selection###################################################
 
         # define the p, d and q parameters to take any value between 0 and 2
         p = d = q = range(0, 2)
@@ -113,58 +108,30 @@ class SARIMA:
 
         print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
         self.model = self.model.fit()
-        print(self.model.summary())
+        # print(self.model.summary())
         self.latest_train_snippest = data
-        pred = self.model.get_prediction(start=data.index.min(), end=data.index.max(),
-                                         dynamic=False, alpha=0.01)
-        mean_var = np.var(pred.predicted_mean)
-        # self.mean_fluctuation.append(mean_var)
 
-    def predict(self, newdf, optimization=False, retrain=False):
+    def predict(self, newdf, optimization=False):
         y_pred = []
-        # print(newdf)
         newdf = self._get_time_index(newdf)
 
-        # # add new observation
-        # refit=True
-        ################################################################################################################
-        old_model = copy.deepcopy(self.model)
-        ################################################################################################################
-        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print(self.model.fittedvalues)
-        print('separator')
-        print(newdf)
-        print(f'Window shape {newdf.shape}')
-        print('-------------------------------')
-        # pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
-        #                                  dynamic=False, alpha=0.25)
-        #
-        # self.monitoring_pred.append(pred)
-
         if not optimization:
-            self.model = self.model.append(newdf)
+            if self.model.fittedvalues.shape[0] > self.memory_threshold:
+                latest_obs = pd.DataFrame([])
+                latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
+                latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
+                self.model = self.model.apply(pd.concat([latest_obs, newdf]), refit=True)
+            else:
+                self.model = self.model.append(newdf)
+
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
         self.full_pred.append(pred)
-        mean_var = np.var(pred.predicted_mean)
-
-        # mean_anomaly = False
-        # try:
-        #     if mean_var > 2 * np.max(self.mean_fluctuation):
-        #         print(f'Means fluctuate too much. Array of means is {self.mean_fluctuation}, current mean is {mean_var}')
-        #         mean_anomaly = True
-        #     else:
-        #         self.mean_fluctuation.append(mean_var)
-        # except:
-        #     self.mean_fluctuation.append(mean_var)
-
+        print('****', len(self.full_pred), ',', pred.conf_int())
         pred_ci = pred.conf_int()
         deanomalized_window = pd.DataFrame([])
 
-        # play around with lower value of threshold
-        # if self.threshold_modelling:
-        #     pred_ci['lower value'] = 0.0
         has_anomalies = False
         anomaly_idxs = []
 
@@ -179,84 +146,12 @@ class SARIMA:
                     has_anomalies = True
                     anomaly_idxs.append(idx)
                     y_pred.append(1)
+
             deanomalized_window.loc[idx, 'value'] = value
 
-        ################################################################################################################
-        # if has_anomalies:
-        # if mean_anomaly:
-        #     model = DBSCAN(eps=abs(np.max(pred_ci['upper value']) - np.min(pred_ci['lower value'])),
-        #                    min_samples=1, metric=dtw)
-        #     y_pred = model.fit_predict(newdf_)
-        #     common = Counter(funcy.lflatten(y_pred)).most_common(1)[0][0]
-        #     for pred, (idx, row) in zip(y_pred, newdf.iterrows()):
-        #         if idx not in newdf_.index or pred != common:
-        #             deanomalized_window.loc[idx, 'value'] = None
-        #         else:
-        #             deanomalized_window.loc[idx, 'value'] = row['value']
-        ################################################################################################################
-
-        # self.model = old_model.append(deanomalized_window)
-
-        # retrain on anomaly but throw away anomalies from dataset
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
 
-        if retrain:
-            if y_pred.count(1) > 0:
-                self.fit(self.latest_train_snippest, 'retrain')
-
         return y_pred
-
-    def plot_threshold(self, y, dataset, datatype, filename, full_test_data, model):
-        print(y)
-        y = y[y['timestamp'] > 1500200000]
-        y = y[y['timestamp'] < 1500300000]
-
-        y = self._get_time_index(y)
-        full_test_data = self._get_time_index(full_test_data)
-        y = y.dropna(subset=['value'])
-        print(y)
-        print('====================================================')
-        ax = y['value'].plot(label='observed')
-
-        idx = 1
-        for _, pred in enumerate(self.full_pred):
-            pred_ci = pred.conf_int()
-
-            # play around with lower value of threshold
-            if self.threshold_modelling:
-                pred_ci['lower value'] = 0.0
-
-            print(pred_ci)
-            if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
-
-                pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
-                ax.fill_between(pred_ci.index,
-                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
-                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
-                                color='k', alpha=.2)
-
-            for tm, row in pred_ci.iterrows():
-                if tm in y.index:
-                    if (adjust_range(row['lower value'], 'div', self.conf_botton) > y.loc[tm, 'value'] or
-                        y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf_top)) and \
-                            full_test_data.loc[tm, 'is_anomaly'] == 0:
-                        ax.scatter(tm, y.loc[tm, 'value'], color='r')
-                    if (adjust_range(row['lower value'], 'div', self.conf_botton) <= y.loc[tm, 'value'] <=
-                        adjust_range(row['upper value'], 'mult', self.conf_top)) \
-                            and full_test_data.loc[tm, 'is_anomaly'] == 1:
-                        ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
-
-            idx += 1
-
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Values')
-        plt.legend()
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/{model}/{model}_{filename.replace(".csv", "")}_threshold_via_sarima_snippest.png')
-
-        plt.close('all')
-        plt.clf()
-        self.full_pred = []
-        return y
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -265,7 +160,44 @@ class SARIMA:
 
         return pred_thr[['lower value', 'upper value']]
 
-    def plot(self, y, dataset, datatype, filename, full_test_data, drift_windows, is_ensemble=False):
+    def plot_ensemble(self, y, dataset, datatype, filename, full_test_data, drift_windows, detected_anomalies):
+        print(y.shape)
+        print(len(self.full_pred))
+        detected_anomalies = pd.to_datetime(pd.Series(detected_anomalies), unit='s').tolist()
+        full_test_data = self._get_time_index(full_test_data)
+
+        y = self._get_time_index(y)
+        y = y.dropna(subset=['value'])
+        ax = y['value'].plot(label='observed', zorder=1)
+
+        pred_ci = pd.concat([x.conf_int() for x in self.full_pred], axis=0)
+        print(pred_ci.head())
+        print(pred_ci.tail())
+        ax.fill_between(pred_ci.index,
+                        pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
+                        pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
+                        color='b', alpha=.2, zorder=0)
+
+        for tm in detected_anomalies:
+            if full_test_data.loc[tm, 'is_anomaly'] == 0:
+                ax.scatter(tm, y.loc[tm, 'value'], color='r')
+        for tm, row in full_test_data[full_test_data['is_anomaly'] == 1].iterrows():
+            if tm not in detected_anomalies:
+                ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
+
+        for wd in drift_windows:
+            ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Values')
+        plt.legend()
+        plt.savefig(f'results/imgs/{dataset}/{datatype}/dp/sarima_{filename.replace(".csv", "")}_full.png')
+
+        plt.close('all')
+        plt.clf()
+
+        self.full_pred = []
+
+    def plot(self, y, dataset, datatype, filename, full_test_data, drift_windows):
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
         y = y.dropna(subset=['value'])
@@ -395,7 +327,7 @@ class ExpSmoothing:
         ax.set_xlabel('Date')
         ax.set_ylabel('Values')
         plt.legend()
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/es/es_{filename.replace(".csv", "")}_train.png')
+        plt.savefig(f'results/imgs/{dataset}/{datatype}/es/es_{filename.replace(".csv", "")}_smooth.png')
 
         plt.close('all')
         plt.clf()

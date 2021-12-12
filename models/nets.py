@@ -175,7 +175,7 @@ class LSTM_autoencoder:
         self.loss += loss.flatten().tolist()
         return y_pred
 
-    def plot(self, timestamps, dataset, datatype, filename, data_test):
+    def plot(self, timestamps, dataset, datatype, filename, data_test, drifts):
         loss_df = pd.DataFrame([])
         loss_df['value'] = self.loss
         loss_df['timestamp'] = timestamps

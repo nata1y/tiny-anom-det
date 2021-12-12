@@ -41,16 +41,14 @@ def fit_base_model(model_params, for_optimization=True):
     global data_in_memory_sz
     percent_anomaly = 0.95
     # 50% train-test split
-    data_train, data_test = copy.deepcopy(data), copy.deepcopy(data)
-    # if dataset == 'kpi':
-    #     data_train = data
-    #     if not for_optimization:
-    #         global data_test
-    # else:
-    #     data_train, data_test = copy.deepcopy(data), copy.deepcopy(data) #np.array_split(data, 2)
-    #     data_train = data_train
-    #     data_test = data_test
+    if dataset == 'kpi':
+        data_train = data
+        if not for_optimization:
+            global data_test
+    else:
+        data_train, data_test = np.array_split(copy.deepcopy(data), 2)
     model = None
+    print(data_train)
 
     if for_optimization:
         data_test = copy.deepcopy(data_train)
@@ -105,6 +103,8 @@ def fit_base_model(model_params, for_optimization=True):
         # need anomalies to properly train mogaal?
         if data_train['is_anomaly'].tolist().count(1) == 0:
             return
+    elif name == 'dp':
+        model = DriftPointModel(driftdetector=ADWIN(delta=0.005), pointdetector=SARIMA(), filename=filename, dataset=dataset)
 
     if name == 'mmd':
         model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
@@ -130,7 +130,7 @@ def fit_base_model(model_params, for_optimization=True):
     if name in ['sarima', 'es']:
 
         start_time = time.time()
-        model.fit(data_train[['timestamp', 'value']], dataset)
+        model.fit(copy.deepcopy(data_train[['timestamp', 'value']]), dataset)
         end_time = time.time()
 
         diff = end_time - start_time
@@ -143,10 +143,16 @@ def fit_base_model(model_params, for_optimization=True):
 
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
+    elif name == 'dp':
+        model.fit(copy.deepcopy(data_train[['timestamp', 'value']]))
     elif name == 'sr':
         # DT param!!!!!!!!!!
-        model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
-                                 score_window=model_params[2], sensitivity=model_params[3],
+        # model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
+        #                          score_window=model_params[2], sensitivity=model_params[3],
+        #                          detect_mode=DetectMode.anomaly_only)
+        model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0],
+                                 mag_window=MAG_WINDOW,
+                                 score_window=SCORE_WINDOW, sensitivity=99,
                                  detect_mode=DetectMode.anomaly_only)
         if model.dynamic_threshold:
             model.fit()
@@ -180,12 +186,12 @@ def fit_base_model(model_params, for_optimization=True):
         if name not in ['dbscan', 'isolation_forest', 'lof', 'mmd', 'lsdd', 'mmd-online',
                         'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph', 'naive']:
             try:
-                X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
+                X, y = data_train[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
                 model.fit(X)
                 end_time = time.time()
             except:
-                X, y = data_test[['value', 'timestamp']], data_test['is_anomaly']
+                X, y = data_train[['value', 'timestamp']], data_test['is_anomaly']
                 start_time = time.time()
                 model.fit(X[-25000:])
                 end_time = time.time()
@@ -240,6 +246,7 @@ def fit_base_model(model_params, for_optimization=True):
                         y_pred = model.predict(window[['timestamp', 'value']], optimization=True)
                     else:
                         y_pred = model.predict(window[['timestamp', 'value']])
+
                 elif name == 'es':
                     y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
                     stacked_res = pd.concat([stacked_res, window[['value', 'timestamp']]])
@@ -273,6 +280,8 @@ def fit_base_model(model_params, for_optimization=True):
                 elif name == 'lstm':
                     y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1),
                                            window['timestamp'])
+                elif name == 'dp':
+                    y_pred = model.predict(window[['timestamp', 'value']])
                 elif name == 'mogaal':
                     y_pred = model.predict(window)
                     print(y_pred)
@@ -362,17 +371,19 @@ def fit_base_model(model_params, for_optimization=True):
                 else:
                     y_pred = model.predict(window[['value', 'timestamp']])
 
-                try:
-                    y_pred = le.transform(y_pred).tolist()
-                except:
-                    pass
+                # try:
+                #     y_pred = le.transform(y_pred).tolist()
+                # except:
+                #     pass
 
                 idx += 1
                 if name not in ['lsdd', 'mmd', 'mmd-online', 'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph']:
                     if anomaly_window == step:
                         # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
                         common = Counter(funcy.lflatten(y_pred)[:window.shape[0]]).most_common(1)[0][0]
+                        before = len(y_pred_total)
                         y_pred_total += [0 if val == common else 1 for val in funcy.lflatten(y_pred)[:window.shape[0]]]
+                        diff = len(y_pred_total) - before
                         if name == 'dbscan':
                             all_labels += [(copy.deepcopy(model.labels_[-len(y):]), core_smpls)]
                     else:
@@ -433,7 +444,7 @@ def fit_base_model(model_params, for_optimization=True):
 
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_point.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
             except:
                 stats = pd.DataFrame([])
 
@@ -452,7 +463,7 @@ def fit_base_model(model_params, for_optimization=True):
                 'prediction_time': np.mean(pred_time),
                 'total_points': data_test.shape[0]
             }, ignore_index=True)
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_point.csv', index=False)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
         # return specificity if no anomalies, else return f1 score
         if data_test['is_anomaly'].tolist().count(1) == 0:
             return 1.0 - specificity
@@ -488,7 +499,7 @@ if __name__ == '__main__':
     else:
         learners_to_loop = models
 
-    for dataset, type in [('NAB', 'relevant'), ('yahoo', 'real')]:
+    for dataset, type in [('yahoo', 'real'), ('NAB', 'relevant')]:
                           # ('kpi', 'train'), ('kpi', 'test')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
@@ -496,13 +507,13 @@ if __name__ == '__main__':
                           # ('NAB', 'relevant'),
                           # ('yahoo', 'synthetic')
         for name, (model, bo_space, def_params) in learners_to_loop.items():
-            # train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
-            if dataset == 'NAB':
-                train_data_path = root_path + '/datasets/machine_metrics/nab_point/'
-            else:
-                train_data_path = root_path + '/datasets/' + dataset + '/point/' + type + '/'
+            train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
+            # if dataset == 'NAB':
+            #     train_data_path = root_path + '/datasets/machine_metrics/nab_drift/'
+            # else:
+            #     train_data_path = root_path + '/datasets/' + dataset + '/drift/' + type + '/'
             try:
-                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_point.csv')
+                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
             except:
                 statf = pd.DataFrame([])
             for filename in os.listdir(train_data_path):
@@ -516,8 +527,10 @@ if __name__ == '__main__':
                     print(f"Training model {name} with data {filename}")
                     data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
-                    if data['is_anomaly'].tolist().count(1) == 0:
-                        continue
+                    data.drop_duplicates(subset=['timestamp'], keep=False, inplace=True)
+
+                    # if data['is_anomaly'].tolist().count(1) == 0:
+                    #     continue
 
                     # if dataset == 'kpi':
                     #     data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/drift/' + 'test' + '/', filename))
@@ -529,19 +542,23 @@ if __name__ == '__main__':
                     except Exception as e:
                         raise e
                         print(f'Error on {filename}')
-                    continue
+                    quit()
 
-                    # try:
-                    #     if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
-                    #     ################ Bayesian optimization ###################################################
-                    #         bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                    #                                 random_state=13, verbose=False, x0=def_params)
-                    #
-                    #         print(f"Found hyper parameters for {name}: {bo_result.x}")
-                    #
-                    #         fit_base_model(bo_result.x, for_optimization=False)
-                    #     else:
-                    #         fit_base_model(def_params, for_optimization=False)
-                    # except Exception as e:
-                    #     raise e
-                    #     print(f'Error on {filename}')
+                    try:
+                        if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
+                        ################ Bayesian optimization ###################################################
+                            bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                                                    random_state=13, verbose=False, x0=def_params)
+
+                            print(f"Found hyper parameters for {name}: {bo_result.x}")
+
+                            fit_base_model(bo_result.x, for_optimization=False)
+                        else:
+                            fit_base_model(def_params, for_optimization=False)
+                    except Exception as e:
+                        raise e
+                        try:
+                            fit_base_model(def_params, for_optimization=False)
+                        except:
+                            pass
+                        print(f'Error on {filename}')
