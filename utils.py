@@ -12,14 +12,6 @@ from skopt.callbacks import EarlyStopper
 from analysis.postanalysis import confusion_visualization
 
 
-class Stopper(EarlyStopper):
-    def __call__(self, result):
-        ret = False
-        if result.func_vals[-1] == 0.0:
-            ret = True
-        return ret
-
-
 def create_dataset(X, y, time_steps=60):
     Xs, ys = [], []
     for i in range(len(X) - time_steps):
@@ -291,12 +283,12 @@ def drift_metrics(y_true, y_pred):
 
 
 def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows):
-    try:
-        confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
-                                data_test['is_anomaly'].tolist(), y_pred_total,
-                                dataset, name, filename.replace('.csv', '') + '_point', type, drift_windows)
-    except Exception as e:
-        raise e
+    # try:
+    #     confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
+    #                             data_test['is_anomaly'].tolist(), y_pred_total,
+    #                             dataset, name, filename.replace('.csv', '') + '_point', type, drift_windows)
+    # except Exception as e:
+    #     raise e
 
     try:
         if name in ['sarima', 'es']:
@@ -347,3 +339,51 @@ def relable_yahoo():
 
                 df['is_anomaly'] = labels_new
                 df.to_csv(f'datasets/yahoo/point/{ds}/{filename}')
+
+
+def merge_nab_drift_points():
+    for ds in ['machine_metrics', 'non_machine_metrics']:
+        data_path_drift = f'datasets/{ds}/nab_drift/'
+        data_path_point = f'datasets/{ds}/nab_point/'
+
+        for filename in os.listdir(data_path_drift):
+            print(filename)
+            f = os.path.join(data_path_drift, filename)
+            try:
+                f_p = os.path.join(data_path_point, filename)
+            except:
+                f_p = None
+            if os.path.isfile(f) and filename:
+                df = pd.read_csv(f)
+                labels = df['is_anomaly'].tolist()
+                labels_new = []
+                drift_start = False
+
+                # add drifts
+                for idx in range(len(labels)):
+                    if not drift_start and labels[idx] == 0:
+                        labels_new.append(0)
+                    elif not drift_start and labels[idx] == 1:
+                        drift_start = True
+                        labels_new.append(1)
+                    elif drift_start and labels[idx] == 1:
+                        labels_new.append(1)
+                        drift_start = False
+                    elif drift_start and labels[idx] == 0:
+                        labels_new.append(1)
+
+                # add points
+                if f_p:
+                    for idx in range(len(labels)):
+                        if labels_new[idx] == 0 and labels[idx] == 1:
+                            labels_new[idx] = 1
+
+                df['is_anomaly'] = labels_new
+                df.to_csv(f'datasets/NAB/normal_labels/{filename}')
+
+        for filename in os.listdir(data_path_point):
+            print(filename)
+            f = os.path.join('datasets/NAB/normal_labels/', filename)
+            if not os.path.isfile(f):
+                df = pd.read_csv(data_path_point + filename)
+                df.to_csv(f'datasets/NAB/normal_labels/{filename}')

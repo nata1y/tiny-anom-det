@@ -26,7 +26,7 @@ class SARIMA:
     model = None
     dataset = ''
 
-    def __init__(self, conf_top=1.1, conf_botton=1.1, train_size=3000):
+    def __init__(self, conf_top=1.5, conf_botton=1.5, train_size=3000):
         self.full_pred = []
         self.mean_fluctuation = []
         self.monitoring_pred = []
@@ -35,8 +35,8 @@ class SARIMA:
         self.threshold_modelling = False
         self.train_size = train_size
         self.latest_train_snippest = pd.DataFrame([])
-        self.result_memory_size = 700
-        self.memory_threshold = 1000
+        self.result_memory_size = 1000
+        self.memory_threshold = 1300
 
     def _get_time_index(self, data):
         if self.dataset in ['yahoo', 'kpi']:
@@ -115,15 +115,6 @@ class SARIMA:
         y_pred = []
         newdf = self._get_time_index(newdf)
 
-        if not optimization:
-            if self.model.fittedvalues.shape[0] > self.memory_threshold:
-                latest_obs = pd.DataFrame([])
-                latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
-                latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
-                self.model = self.model.apply(pd.concat([latest_obs, newdf]), refit=True)
-            else:
-                self.model = self.model.append(newdf)
-
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
@@ -132,7 +123,7 @@ class SARIMA:
         pred_ci = pred.conf_int()
         deanomalized_window = pd.DataFrame([])
 
-        has_anomalies = False
+        anomalies_count = 0
         anomaly_idxs = []
 
         for idx, row in pred_ci.iterrows():
@@ -143,13 +134,35 @@ class SARIMA:
                     y_pred.append(0)
                     value = newdf.loc[idx, 'value']
                 else:
-                    has_anomalies = True
+                    anomalies_count += 1
                     anomaly_idxs.append(idx)
                     y_pred.append(1)
+                    newdf.loc[idx, 'value'] = None
 
             deanomalized_window.loc[idx, 'value'] = value
 
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
+        try:
+            if not optimization:
+                if self.model.fittedvalues.shape[0] > self.memory_threshold:
+                    latest_obs = pd.DataFrame([])
+                    latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
+                    latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
+                    self.model = self.model.apply(pd.concat([latest_obs, newdf]), refit=False)
+                else:
+                    self.model = self.model.append(newdf)
+        except ValueError as e:
+            print(e)
+            stuffed_value = pd.DataFrame([])
+            stuffed_value['timestamp'] = pd.date_range(start=self.model.fittedvalues.index.max(), end=newdf.index.min(),
+                                                       freq='5T')
+            stuffed_value['value'] = None
+            stuffed_value.set_index('timestamp', inplace=True)
+            stuffed_value = stuffed_value[1:-1]
+            newdf = pd.concat([stuffed_value, newdf])
+            newdf = newdf.asfreq('5T')
+            print(newdf.head())
+            self.model = self.model.append(newdf.astype(float))
 
         return y_pred
 
@@ -161,8 +174,6 @@ class SARIMA:
         return pred_thr[['lower value', 'upper value']]
 
     def plot_ensemble(self, y, dataset, datatype, filename, full_test_data, drift_windows, detected_anomalies):
-        print(y.shape)
-        print(len(self.full_pred))
         detected_anomalies = pd.to_datetime(pd.Series(detected_anomalies), unit='s').tolist()
         full_test_data = self._get_time_index(full_test_data)
 
@@ -171,8 +182,6 @@ class SARIMA:
         ax = y['value'].plot(label='observed', zorder=1)
 
         pred_ci = pd.concat([x.conf_int() for x in self.full_pred], axis=0)
-        print(pred_ci.head())
-        print(pred_ci.tail())
         ax.fill_between(pred_ci.index,
                         pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
                         pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),

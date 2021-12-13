@@ -11,44 +11,51 @@ class DriftPointModel:
         self.drift_detector = driftdetector
         self.anomaly_detector = pointdetector
         self.drift_windows = []
-        self.detcted_anomalies = []
+        self.detected_anomalies = []
+        self.idx_drift_detected = None
+        self.point_drift_alarming = 0
+        self.latency_before_retrain = 50
 
     def fit(self, X):
         self.anomaly_detector.fit(X, self.dataset)
 
     def predict(self, X):
-        x, ts = X['value'].tolist()[-1], X['timestamp'].tolist()[-1]
-        self.drift_detector.add_element(x)
-        anomaly_index = self.anomaly_detector.predict(X)[-1]
+        group_anomalies = []
+        for point in range(X.shape[0]):
+            x, ts = X['value'].tolist()[point], X['timestamp'].tolist()[point]
+            self.drift_detector.add_element(x)
 
-        if self.drift_detector.detected_change():
-            self.drift_detector.reset()
-            # self.anomaly_detector.retrain()
-            try:
-                self.drift_windows.append((datetime.datetime.strptime(ts, '%m/%d/%Y %H:%M'),
-                                      datetime.datetime.strptime(ts, '%m/%d/%Y %H:%M')))
-            except:
+            if self.drift_detector.detected_change():
+                group_anomalies.append(1)
                 try:
-                    self.drift_windows.append((datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S'),
-                                          datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')))
+                    self.drift_windows.append((datetime.datetime.strptime(ts, '%m/%d/%Y %H:%M'),
+                                               datetime.datetime.strptime(ts, '%m/%d/%Y %H:%M')))
                 except:
-                    self.drift_windows.append((ts, ts))
-            drift_index = 1
-        else:
-            drift_index = 0
+                    try:
+                        self.drift_windows.append((datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S'),
+                                                   datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')))
+                    except:
+                        self.drift_windows.append((ts, ts))
+            else:
+                group_anomalies.append(0)
 
-        if self.drift_now:
-            self.detcted_anomalies.append(ts)
-            return [1]
+        point_anomalies = self.anomaly_detector.predict(X)
+        y_pred = []
+        if sum(point_anomalies) == len(point_anomalies):
+            y_pred = [1 for _ in range(len(point_anomalies))]
+            self.point_drift_alarming += len(point_anomalies)
+            self.detected_anomalies += X.index.tolist()
 
-        if drift_index == anomaly_index:
-            if drift_index == 1:
-                self.drift_now = not self.drift_now
-                self.detcted_anomalies.append(ts)
-            return [drift_index]
         else:
-            return [0]
+            for pa, ga, ts in zip(point_anomalies, group_anomalies, X.index.tolist()):
+                if pa == ga == 1:
+                    self.detected_anomalies.append(ts)
+                    y_pred.append(1)
+                else:
+                    y_pred.append(0)
+
+        return y_pred
 
     def plot(self, data_test_snippest, type, data_test):
         self.anomaly_detector.plot_ensemble(data_test_snippest, self.dataset, type, 'drift_' + self.filename, data_test,
-                                   self.drift_windows, self.detcted_anomalies)
+                                   self.drift_windows, self.detected_anomalies)

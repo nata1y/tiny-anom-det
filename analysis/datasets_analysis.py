@@ -250,7 +250,7 @@ def check_dist_sample():
 
 # For every dataset, we take its per- TS features and see their variance.
 # Catch22 assumes that all features are important and are PC, so if we have features with low variance within dataset
-# it might indicate that it is not representative from the point of view of that feature
+# it might indicate that it is not representative from the nab_point of view of that feature
 def check_low_variance_features():
     random.seed(30)
     res = pd.DataFrame([])
