@@ -37,6 +37,13 @@ class SARIMA:
         self.latest_train_snippest = pd.DataFrame([])
         self.result_memory_size = 1000
         self.memory_threshold = 1300
+        self.freq = None
+
+    def _check_freq(self, idx):
+        if self.freq:
+            return self.freq
+        my_freq = idx[1].to_pydatetime() - idx[0].to_pydatetime()
+        return my_freq
 
     def _get_time_index(self, data):
         if self.dataset in ['yahoo', 'kpi']:
@@ -47,8 +54,10 @@ class SARIMA:
             # preprocessing depending on TS.....
             data.set_index('timestamp', inplace=True)
             data = data[~data.index.duplicated(keep='first')]
-            data = data.asfreq(data.index.inferred_freq)
-            self.freq = data.index.inferred_freq
+
+            self.freq = self._check_freq(data.index)
+            data = data.asfreq(self.freq)
+
             return data
         data.set_index('timestamp', inplace=True)
         self.freq = data.index.inferred_freq
@@ -119,6 +128,33 @@ class SARIMA:
         print(self.model.fittedvalues.tail())
         print(newdf.head())
 
+        try:
+            if not optimization:
+                if self.model.fittedvalues.shape[0] > self.memory_threshold:
+                    latest_obs = pd.DataFrame([])
+                    latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
+                    latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
+                    if in_dp:
+                        newdf = newdf[0:1]
+                    self.model = self.model.apply(pd.concat([latest_obs, newdf]), refit=False)
+                else:
+                    if in_dp:
+                        newdf = newdf[0:1]
+                    self.model = self.model.append(newdf)
+        except ValueError as e:
+            print(e)
+            stuffed_value = pd.DataFrame([])
+            stuffed_value['timestamp'] = pd.date_range(start=self.model.fittedvalues.index.max(), end=newdf.index.min(),
+                                                       freq=self.freq)
+            stuffed_value['value'] = None
+            stuffed_value.set_index('timestamp', inplace=True)
+            stuffed_value = stuffed_value[1:-1]
+            newdf = pd.concat([stuffed_value, newdf])
+            newdf = newdf.asfreq(self.freq)
+            if in_dp:
+                newdf = newdf[0:1]
+            self.model = self.model.append(newdf.astype(float))
+
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
@@ -155,32 +191,6 @@ class SARIMA:
             deanomalized_window.loc[idx, 'value'] = value
 
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
-        try:
-            if not optimization:
-                if self.model.fittedvalues.shape[0] > self.memory_threshold:
-                    latest_obs = pd.DataFrame([])
-                    latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
-                    latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
-                    if in_dp:
-                        newdf = newdf[0:1]
-                    self.model = self.model.apply(pd.concat([latest_obs, newdf]), refit=False)
-                else:
-                    if in_dp:
-                        newdf = newdf[0:1]
-                    self.model = self.model.append(newdf)
-        except ValueError as e:
-            print(e)
-            stuffed_value = pd.DataFrame([])
-            stuffed_value['timestamp'] = pd.date_range(start=self.model.fittedvalues.index.max(), end=newdf.index.min(),
-                                                       freq=self.freq)
-            stuffed_value['value'] = None
-            stuffed_value.set_index('timestamp', inplace=True)
-            stuffed_value = stuffed_value[1:-1]
-            newdf = pd.concat([stuffed_value, newdf])
-            newdf = newdf.asfreq(self.freq)
-            if in_dp:
-                newdf = newdf[0:1]
-            self.model = self.model.append(newdf.astype(float))
 
         return y_pred
 
