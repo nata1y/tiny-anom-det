@@ -1,4 +1,6 @@
 # analyze extracted TS properties to model performance correlations
+import copy
+
 import pandas as pd
 import os
 import numpy as np
@@ -104,7 +106,8 @@ def ts_properties_to_accuracy():
     correlation_df = pd.DataFrame([])
     idx = 0
     exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
-    for dataset, subsets in [('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
+    for dataset, subsets in [('kpi', ['train']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark']),
+                             ('NAB', ['relevant'])]:
         for tss in subsets:
             print(tss)
             ts_properties_c22 = pd.read_csv(f'results/ts_properties/{dataset}_{tss}_features_c22.csv').set_index('ts')
@@ -196,8 +199,8 @@ def mutual_info_of_features_to_f1():
                                             'SP_Summaries_welch_rect_area_5_1',	'SB_BinaryStats_diff_longstretch0',
                                             'SB_MotifThree_quantile_hh', 'SC_FluctAnal_2_rsrangefit_50_1_logi_prop_r1',
                                             'SC_FluctAnal_2_dfa_50_1_2_logi_prop_r1', 'SP_Summaries_welch_rect_centroid',
-                                            'FC_LocalSimple_mean3_stderr',	'series_length', 'unitroot_pp',
-                                            'unitroot_kpss', 'stability', 'nperiods', 'seasonal_period', 'trend',
+                                            'FC_LocalSimple_mean3_stderr', 'unitroot_pp',
+                                            'unitroot_kpss', 'stability', 'seasonal_period', 'trend',
                                             'spike', 'linearity', 'curvature', 'e_acf1', 'e_acf10',	'x_pacf5',
                                             'diff1x_pacf5',	'diff2x_pacf5',	'nonlinearity',	'lumpiness', 'alpha', 'beta',
                                             'flat_spots', 'crossing_points',	'arch_lm', 'x_acf1', 'x_acf10',
@@ -215,7 +218,7 @@ def mutual_info_of_features_to_f1():
         except Exception as e:
             raise e
 
-    res.to_csv(f'results/ts_properties/mutual_info_yahoo.csv')
+    res.to_csv(f'results/ts_properties/mutual_info.csv')
 
 
 def find_relationship():
@@ -224,7 +227,7 @@ def find_relationship():
     df = pd.read_csv(f'results/ts_properties/features_to_f1_corr.csv')
     df.dropna(axis=1, inplace=True)
 
-    df2 = pd.read_csv(f'results/ts_properties/mutual_info_yahoo.csv')
+    df2 = pd.read_csv(f'results/ts_properties/mutual_info.csv')
     df2['mutual_information'] = df2['mutual_information'].astype('float64')
 
     cols = ['DN_HistogramMode_5', 'DN_HistogramMode_10', 'CO_f1ecac', 'CO_FirstMin_ac',
@@ -236,37 +239,44 @@ def find_relationship():
                                             'SP_Summaries_welch_rect_area_5_1',	'SB_BinaryStats_diff_longstretch0',
                                             'SB_MotifThree_quantile_hh', 'SC_FluctAnal_2_rsrangefit_50_1_logi_prop_r1',
                                             'SC_FluctAnal_2_dfa_50_1_2_logi_prop_r1', 'SP_Summaries_welch_rect_centroid',
-                                            'FC_LocalSimple_mean3_stderr',	'series_length', 'unitroot_pp',
-                                            'unitroot_kpss', 'stability', 'nperiods', 'seasonal_period', 'trend',
+                                            'FC_LocalSimple_mean3_stderr',	'unitroot_pp',
+                                            'unitroot_kpss', 'stability', 'seasonal_period', 'trend',
                                             'spike', 'linearity', 'curvature', 'e_acf1', 'e_acf10',	'x_pacf5',
                                             'diff1x_pacf5',	'diff2x_pacf5',	'nonlinearity',	'lumpiness', 'alpha', 'beta',
-                                            'flat_spots', 'crossing_points',	'arch_lm', 'x_acf1', 'x_acf10',
+                                            'flat_spots', 'crossing_points', 'arch_lm', 'x_acf1', 'x_acf10',
                                             'diff1_acf1', 'diff1_acf10', 'diff2_acf1', 'diff2_acf10']
 
     for model in ['lstm', 'sr', 'sarima']:
-        cols_filtered = df2[df2['model'] == model][df2['mutual_information'] > 0.25]['feature'].tolist()
-        print(f'Filtered columns for {model} are: {cols_filtered}')
-        X = df[cols]
-        y = df[f'{model}_score']
+        for modeller in ['mlp', 'gbr']:
+            # cols_filtered = df2[df2['model'] == model][df2['mutual_information'] > 0.25]['feature'].tolist()
+            cols_filtered = df2[df2['model'] == model].sort_values('mutual_information', ascending=False)['feature'].tolist()[:2]
+            cols_filtered += [copy.deepcopy(cols_filtered)]
 
-        gbr = GradientBoostingRegressor()
-        gbr.fit(X, y)
+            print(f'Filtered columns for {model} are: {cols_filtered}')
+            X = df[cols]
+            y = df[f'{model}_score']
 
-        mlp = make_pipeline(StandardScaler(),
-                            MLPRegressor(hidden_layer_sizes=(100, 100),
-                                         tol=1e-2, max_iter=500, random_state=0))
-        mlp.fit(X, y)
+            gbr = GradientBoostingRegressor()
+            gbr.fit(X, y)
 
-        fig, ax = plt.subplots(figsize=(12, 10))
-        gbr_disp = plot_partial_dependence(gbr, X, cols_filtered, ax=ax)
+            mlp = make_pipeline(StandardScaler(),
+                                MLPRegressor(hidden_layer_sizes=(100, 100),
+                                             tol=1e-2, max_iter=500, random_state=0))
+            mlp.fit(X, y)
 
-        fig, ax = plt.subplots(figsize=(12, 10))
-        mlp_disp = plot_partial_dependence(mlp, X, cols_filtered, ax=ax, line_kw={"color": "red"})
+            fig, ax = plt.subplots(figsize=(12, 10))
+            gbr_disp = plot_partial_dependence(gbr, X, cols_filtered, ax=ax)
 
-        fig, axs = plt.subplots(1, len(cols_filtered), figsize=(20, 10))
-        # mlp_disp.plot(ax=axs, line_kw={"label": "Multi-layer Perceptron", "color": "red"})
-        gbr_disp.plot(ax=axs, line_kw={"label": "Gradient Boosting Regressor"})
+            fig, ax = plt.subplots(figsize=(12, 10))
+            mlp_disp = plot_partial_dependence(mlp, X, cols_filtered, ax=ax, line_kw={"color": "red"})
 
-        plt.savefig(f'results/imgs/dependence/{model}_yahoo_gbr_25.png')
+            plt.title(f'{model.upper()}: 2 most influential features and their joint effect PDP')
+            fig, axs = plt.subplots(1, len(cols_filtered), figsize=(20, 10))
+            if modeller == 'mlp':
+                mlp_disp.plot(ax=axs, line_kw={"label": "Multi-layer Perceptron", "color": "red"})
+            else:
+                gbr_disp.plot(ax=axs, line_kw={"label": "Gradient Boosting Regressor"})
 
-        plt.clf()
+            plt.savefig(f'results/imgs/dependence/{model}_all_{modeller}_max.png')
+
+            plt.clf()
