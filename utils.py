@@ -299,15 +299,24 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
             model.plot(data_test[['timestamp', 'value']], type, data_test)
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test, drift_windows)
-            # if model.dynamic_threshold:
-            #     model.plot_dynamic_threshold(data_test['timestamp'].tolist(), dataset, type, filename, data_test)
-        # elif name == 'dbscan':
-        #     plot_dbscan(all_labels, dataset, type, filename, data_test[['value', 'timestamp']], anomaly_window)
-        # elif name == 'seasonal_decomp':
-        #     model.plot(type, filename, )
     except Exception as e:
         raise e
         print(e)
+
+
+def plot_change(score_array, anomaly_idxs, model, ts, dataset):
+    helper = pd.DataFrame([])
+    helper['value'] = score_array
+    helper['ma'] = helper.rolling(window=5).mean()
+    plt.plot(range(len(score_array)), score_array, marker='o', label='hamming distance')
+    plt.plot(range(len(score_array)), helper['ma'].tolist(), marker='*', color='red', label='Rolling mean')
+    for idx in anomaly_idxs:
+        plt.axvline(x=idx, color='orange', linestyle='--')
+    plt.xlabel('Batch')
+    plt.ylabel('Hamming Distance')
+    plt.legend()
+    plt.savefig(f'results/imgs/change_performance/{dataset}/{model}_{ts}.png')
+    plt.clf()
 
 
 def relable_yahoo():

@@ -36,16 +36,18 @@ models = {
           #              [1.0, 20, 20, 10, 5, 0.95]),
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
-          # 'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
-          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
-          #                           Integer(low=1, high=100, name='sensitivity')],
-          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-          'dp': (DriftPointModel, [], []),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.0, high=20.0, name='threshold')], [1.5]),
+          'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
+                                    Integer(low=1, high=30, name='MAG_WINDOW'),
+                                    Integer(low=5, high=1000, name='SCORE_WINDOW'),
+                                    Integer(low=1, high=100, name='sensitivity')],
+                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-          #            [1.2, 1.2]),
+          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+                     [1.2, 1.2]),
+          # 'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
+          # 'dp': (DriftPointModel, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton"),
+          #                          Real(low=0.00001, high=0.9, name="delta")], [1.2, 1.2, 0.002]),
           # 'naive': (NaiveDetector, [Integer(low=2, high=100, name='k'), Categorical([0.0, 1.0], name='u'),
           #                           Real(low=0.01, high=3.0, name='c'), Real(low=0.01, high=100.0, name='b'),
           #                           Categorical([True, False], name='useabs')],
@@ -76,4 +78,27 @@ drift_detectors = {
                       Integer(low=100, high=1000, name='window_size')], [0.005, 1000]),
     'ph': (PageHinkley, [Real(low=0.00001, high=0.9, name="delta"), Integer(low=1, high=1000, name='threshold')],
            [0.005, 50])
+}
+
+
+anomaly_taxonomy = {
+    # real_37, real_43, real_53, ec2_cpu_utilization_ac20cd, ec2_network_in_5abac7, speed_7578, 'Twitter_volume_KO'
+    # Twitter_volume_UPS- ?
+    '1a': ['real_1', 'real_2', 'real_3', 'real_4', 'real_6', 'real_10', 'real_11', 'real_12', 'real_13', 'real_15',
+           'real_9', 'real_16', 'real_20', 'real_21', 'real_24', 'real_26', 'real_29', 'real_30', 'real_33', 'real_34',
+           'real_38', 'real_39', 'real_41', 'real_45', 'real_50', 'real_51', 'real_52', 'real_60', 'real_61', 'real_62',
+           'ambient_temperature_system_failure', 'ec2_cpu_utilization_5f5533', 'ec2_cpu_utilization_fe7f93',
+           'ec2_disk_write_bytes_c0d644', 'ec2_request_latency_system_failure', 'elb_request_count_8c0756',
+           'exchange-3_cpm', 'exchange-4_cpm', 'occupancy_6005', 'occupancy_t4013', 'speed_t4013', 'Twitter_volume_AAPL',
+           'Twitter_volume_FB', 'Twitter_volume_PFE'],
+    '1b': [],
+    '4a': ['ec2_cpu_utilization_24ae8d', 'ec2_disk_write_bytes_1ef3de', 'nyc_taxi'],
+    '7a': ['real_25', 'real_40', 'real_46', 'art_daily_flatmiddel', 'art_daily_jumpsdown', 'art_daily_jumpsup',
+           'art_daily_nojumps'],
+    '7b': ['real_8', 'ec2_cpu_utilization_53ea38'],
+    '7c': ['ec2_cpu_utilization_ac20cd', 'grok_asg_anomaly', 'rds_cpu_utilization_cc0c53'],
+    '7d': ['real_7', 'real_17', 'real_19', 'real_22', 'real_24', 'real_28', 'real_31', 'real_32', 'real_42', 'real_58',
+           'real_63', 'real_66', 'real_67', 'cpu_utilization_asg_misconfiguration', ''],
+    '7e': ['real_55', 'real_56'],
+    '7f': ['real_65']
 }
