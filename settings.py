@@ -1,3 +1,3 @@
 test_drifts = False
-anomaly_window = 1
-step = 1
+anomaly_window = 60
+step = 60

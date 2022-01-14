@@ -1,3 +1,4 @@
+import ast
 import json
 from math import sqrt
 
@@ -283,12 +284,12 @@ def drift_metrics(y_true, y_pred):
 
 
 def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows):
-    # try:
-    #     confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
-    #                             data_test['is_anomaly'].tolist(), y_pred_total,
-    #                             dataset, name, filename.replace('.csv', '') + '_point', type, drift_windows)
-    # except Exception as e:
-    #     raise e
+    try:
+        confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
+                                data_test['is_anomaly'].tolist(), y_pred_total,
+                                dataset, name, filename.replace('.csv', ''), type, drift_windows)
+    except Exception as e:
+        raise e
 
     try:
         if name in ['sarima', 'es']:
@@ -300,7 +301,6 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test, drift_windows)
     except Exception as e:
-        raise e
         print(e)
 
 
@@ -396,3 +396,185 @@ def merge_nab_drift_points():
             if not os.path.isfile(f):
                 df = pd.read_csv(data_path_point + filename)
                 df.to_csv(f'datasets/NAB/normal_labels/{filename}')
+
+
+anomaly_taxonomy = {
+    # real_37, real_43, real_53, ec2_cpu_utilization_ac20cd, ec2_network_in_5abac7, speed_7578, 'Twitter_volume_KO'
+    # Twitter_volume_UPS synthetic_2, synthetic_16 - ?
+    '1a': ['real_1', 'real_2', 'real_3', 'real_4', 'real_6', 'real_10', 'real_11', 'real_12', 'real_13', 'real_15',
+           'real_9', 'real_16', 'real_20', 'real_21', 'real_24', 'real_26', 'real_29', 'real_30', 'real_33', 'real_34',
+           'real_38', 'real_39', 'real_41', 'real_45', 'real_50', 'real_51', 'real_52', 'real_60', 'real_61', 'real_62',
+           'ambient_temperature_system_failure', 'ec2_cpu_utilization_5f5533', 'ec2_cpu_utilization_fe7f93',
+           'ec2_disk_write_bytes_c0d644', 'ec2_request_latency_system_failure', 'elb_request_count_8c0756',
+           'exchange-3_cpm', 'exchange-4_cpm', 'occupancy_6005', 'occupancy_t4013', 'speed_t4013', 'Twitter_volume_AAPL',
+           'Twitter_volume_FB', 'synthetic_5', 'synthetic_7', 'synthetic_9', 'synthetic_10', 'synthetic_11',
+           'synthetic_13', 'synthetic_14', 'synthetic_19', 'synthetic_21', 'synthetic_23', 'synthetic_25',
+           'synthetic_27', 'synthetic_28', 'synthetic_30', 'synthetic_31', 'synthetic_35', 'synthetic_37',
+           'synthetic_39', 'synthetic_41', 'synthetic_42', 'synthetic_43', 'synthetic_44', 'synthetic_47',
+           'synthetic_48', 'synthetic_49', 'synthetic_51', 'synthetic_53', 'synthetic_55', 'synthetic_56',
+           'synthetic_57', 'synthetic_58', 'synthetic_59', 'synthetic_60', 'synthetic_61', 'synthetic_62',
+           'synthetic_63', 'synthetic_65', 'synthetic_67', 'synthetic_68', 'synthetic_69', 'synthetic_70',
+           'synthetic_72', 'synthetic_73', 'synthetic_74', 'synthetic_75', 'synthetic_76', 'synthetic_77',
+           'synthetic_79', 'synthetic_81', 'synthetic_83', 'synthetic_84', 'synthetic_85', 'synthetic_88',
+           'synthetic_89', 'synthetic_90', 'synthetic_91', 'synthetic_93', 'synthetic_95', 'synthetic_97',
+           'synthetic_98', 'synthetic_99', 'synthetic_100'],
+    '1a_generated': ['art_daily_no_noise', 'art_daily_perfect_square_wave', 'art_daily_small_noise', 'art_flatline',
+                     'art_noisy', 'ec2_cpu_utilization_c6585a', 'exchange-3_cpm_results', 'occupancy_6005',
+                     'occupancy_t4013', 'rds_cpu_utilization_cc0c53', 'Twitter_volume_FB', 'real_1', 'real_10',
+                     'real_12', 'real_16', 'real_18', 'real_21', 'real_24', 'real_25', 'real_3', 'real_30', 'real_33',
+                     'real_35', 'real_36', 'real_4', 'real_41', 'real_42', 'real_45', 'real_49', 'real_5', 'real_50',
+                     'real_53', 'real_54', 'real_58', 'real_59', 'real_62', 'real_64', 'real_67', 'real_8',
+                     'synthetic_100', 'synthetic_11', 'synthetic_13', 'synthetic_14', 'synthetic_19',
+                     'synthetic_21', 'synthetic_23', 'synthetic_25', 'synthetic_27', 'synthetic_28', 'synthetic_30',
+                     'synthetic_31', 'synthetic_33', 'synthetic_34', 'synthetic_35', 'synthetic_37', 'synthetic_39',
+                     'synthetic_41', 'synthetic_42', 'synthetic_43', 'synthetic_44', 'synthetic_46', 'synthetic_47',
+                     'synthetic_48', 'synthetic_49', 'synthetic_5', 'synthetic_51', 'synthetic_53', 'synthetic_55',
+                     'synthetic_56', 'synthetic_57', 'synthetic_58', 'synthetic_59', 'synthetic_60', 'synthetic_61',
+                     'synthetic_62', 'synthetic_63', 'synthetic_65', 'synthetic_67', 'synthetic_69', 'synthetic_7',
+                     'synthetic_70', 'synthetic_71', 'synthetic_72', 'synthetic_73', 'synthetic_74', 'synthetic_75',
+                     'synthetic_76', 'synthetic_77', 'synthetic_79', 'synthetic_81', 'synthetic_83', 'synthetic_84',
+                     'synthetic_85', 'synthetic_86', 'synthetic_87', 'synthetic_88', 'synthetic_89', 'synthetic_9',
+                     'synthetic_90', 'synthetic_91', 'synthetic_93', 'synthetic_95', 'synthetic_97', 'synthetic_98',
+                     'synthetic_99', 'A3Benchmark-TS64', 'A3Benchmark-TS66'],
+    '1b': [],
+    '4a': ['ec2_cpu_utilization_24ae8d', 'ec2_disk_write_bytes_1ef3de', 'nyc_taxi', 'synthetic_1', '',
+           'synthetic_3', 'synthetic_4', 'synthetic_6', 'synthetic_8', 'synthetic_22', 'synthetic_15', 'synthetic_12',
+           'synthetic_36', 'synthetic_40', 'synthetic_45', 'synthetic_50', 'synthetic_64', 'synthetic_66',
+           'synthetic_78', 'synthetic_92', 'synthetic_96'],
+    '7a': ['real_25', 'real_40', 'real_46', 'art_daily_flatmiddel', 'art_daily_jumpsdown', 'art_daily_jumpsup',
+           'art_daily_nojumps'],
+    '7b': ['real_8', 'ec2_cpu_utilization_53ea38'],
+    '7c': ['ec2_cpu_utilization_ac20cd', 'grok_asg_anomaly', 'rds_cpu_utilization_cc0c53'],
+    '7d': ['real_7', 'real_17', 'real_19', 'real_22', 'real_24', 'real_28', 'real_31', 'real_32', 'real_42', 'real_58',
+           'real_63', 'real_66', 'real_67', 'cpu_utilization_asg_misconfiguration'],
+    '7e': ['real_55', 'real_56'],
+    '7f': ['real_65']
+}
+
+
+def score_per_anomaly_group():
+    idx = 0
+    correlation_df = pd.DataFrame([])
+    for dataset, subsets in [('NAB', ['relevant']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
+        for tss in subsets:
+            print(tss)
+            sz = 60
+            if dataset == 'kpi':
+                sz = 1024
+
+            sr = pd.read_csv(
+                f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sr.csv')
+
+            try:
+                lstm = pd.read_csv(
+                    f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm.csv')
+            except:
+                try:
+                    lstm = pd.read_csv(
+                        f'C:\\Users\\oxifl\\Desktop\\thesis_res\\1_no_opt_no_updt\\{dataset}\\'
+                        f'min_metrics\\win_{sz}\\{tss}\\{dataset}_{tss}_stats_lstm.csv')
+                except:
+                    lstm = pd.DataFrame([])
+                    lstm['f1'] = [0 for i in range(sr.shape[0])]
+
+            try:
+                sarima = pd.read_csv(
+                    f'C:\\Users\\oxifl\\Desktop\\thesis_res\\2_opt_no_updt\\{dataset}\\'
+                    f'win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima.csv')
+            except:
+                try:
+                    sarima = pd.read_csv(
+                        f'C:\\Users\\oxifl\\Desktop\\thesis_res\\1_no_opt_no_updt\\{dataset}\\'
+                        f'min_metrics\\win_{sz}\\{tss}\\{dataset}_{tss}_stats_sarima.csv')
+                except Exception as e:
+                    sarima = pd.DataFrame([])
+                    sarima['f1'] = [0 for i in range(sr.shape[0])]
+
+            for atype in ['1a_generated']:
+                for f_lstm, f_sarima, f_sr, s_lstm, s_sarima, s_sr, ts in \
+                        zip(lstm['f1'], sarima['f1'], sr['f1'], lstm['specificity'],
+                            sarima['specificity'], sr['specificity'],
+                            sr['dataset']):
+                    print(ts)
+
+                    if str(ts) != 'nan' and 'flatline' not in ts and ts.replace('.csv', '') in anomaly_taxonomy[atype]:
+                        series = pd.read_csv('datasets/' + dataset + '/' + tss + '/' + ts + '.csv')
+                        series.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+                        if dataset != 'kpi':
+                            data_train, data_test = np.array_split(series, 2)
+                            if data_test['is_anomaly'].tolist().count(1) == 0:
+                                continue
+
+                        correlation_df.loc[idx, 'dataset'] = dataset + '_' + tss
+                        correlation_df.loc[idx, 'ts'] = ts
+
+                        correlation_df.loc[idx, 'lstm_score'] = f_lstm
+                        correlation_df.loc[idx, 'sarima_score'] = f_sarima
+                        correlation_df.loc[idx, 'sr_score'] = f_sr
+
+                        idx += 1
+
+    print(correlation_df.head())
+    if not correlation_df.empty:
+        correlation_df.to_csv(f'results/ts_properties/1a_generated_anomaly_to_f1.csv')
+
+
+def analyze_anomalies(root_path):
+    type_one_anomalies = []
+    for dataset, subsets in [('NAB', ['relevant']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
+        for tss in subsets:
+            train_data_path = root_path + '/datasets/' + dataset + '/' + tss + '/'
+            for filename in os.listdir(train_data_path):
+                print(filename)
+                f = os.path.join(train_data_path, filename)
+
+                if os.path.isfile(f) and filename:
+                    data = pd.read_csv(f)
+                    data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+                    data.drop_duplicates(subset=['timestamp'], keep=False, inplace=True)
+
+                    anomalies = data[data['is_anomaly'] == 1]['value'].values
+                    normals = data[data['is_anomaly'] == 0]['value'].values
+                    normals_min, normals_max = np.min(normals), np.max(normals)
+
+                    if not [a for a in anomalies if normals_min <= a <= normals_max]:
+                        type_one_anomalies.append(filename.replace('.csv', ''))
+
+    print(type_one_anomalies)
+
+
+def avg_batch_f1():
+    for dataset, subsets in [('NAB', ['relevant']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
+        for tss in subsets:
+                total = 0
+                avg_f1_before, avg_f1_after = 0.0, 0.0
+                for model in ['sarima']:
+                    try:
+                        path = 'results/' + dataset + '_' + tss + '_stats_' + model + '_batched.csv'
+                        df = pd.read_csv(path)
+                        # print(df.head())
+                        for idx, row in df.iterrows():
+                            l = ast.literal_eval(row['batch_metrics'])
+                            a = ast.literal_eval(row['anomaly_idxs'])
+                            if not a:
+                                continue
+                            a1, al = a[0], a[-1]
+                            try:
+                                if not pd.isna(np.mean(l[:a1])) and not pd.isna(np.mean(l[a1 + 1:])):
+                                    avg_f1_before += np.mean(l[:a1])
+                                    avg_f1_after += np.mean(l[a1 + 1:])
+                                    total += 1
+                                    # print(pd.isna(np.mean(l[:a1])), np.mean(l[:a1]))
+                            except Exception as e:
+                                pass
+
+                    except Exception as e:
+                        pass
+
+                if total > 0:
+                    avg_f1_before /= total
+                    avg_f1_after /= total
+                    print(f'Benchmerk {dataset} with dataset {tss} has difference in abg f1 scores '
+                          f'{avg_f1_after - avg_f1_before} for {model}')

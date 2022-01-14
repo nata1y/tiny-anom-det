@@ -27,8 +27,8 @@ POSSIBILITY OF SUCH DAMAGE.
 import pandas as pd
 import numpy as np
 
-from msanomalydetector.util import *
-import msanomalydetector.boundary_utils as boundary_helper
+from models.sr.msanomalydetector.util import *
+import models.sr.msanomalydetector.boundary_utils as boundary_helper
 from models.statistical_models import SARIMA
 from msanomalydetector._anomaly_kernel_cython import median_filter
 import plotly.graph_objects as go
@@ -103,7 +103,7 @@ class SpectralResidual:
 
         x_fp, y_fp = [], []
         x_fn, y_fn = [], []
-        dataset = dataset[~dataset.index.duplicated(keep='first')]
+        datatest = datatest[~datatest.index.duplicated(keep='first')]
         for tm, row in self.history.iterrows():
             if tm in datatest.index:
                 if row['score'] > self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 0:

@@ -3,15 +3,17 @@ import os
 from collections import Counter
 
 import funcy
+from catch22 import catch22_all
 from sklearn import preprocessing
+from skopt.callbacks import EarlyStopper
 
-from analysis.ts_analysis import machine_ts_to_features_correlation
+from analysis.ts_analysis import find_relationship, ts_properties_to_accuracy, mutual_info_of_features_to_f1, \
+    permutation_analysis
 from models.decompose_model import DecomposeResidual
-from models.ensembel import Ensemble
-from utils import Stopper, drift_metrics, plot_general, relable_yahoo
+from utils import drift_metrics, plot_general, plot_change, score_per_anomaly_group, analyze_anomalies, avg_batch_f1
 
 from sklearn.ensemble import IsolationForest
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, mean_absolute_error, hamming_loss
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import OneClassSVM
 from skopt import gp_minimize
@@ -35,10 +37,19 @@ root_path = os.getcwd()
 le = preprocessing.LabelEncoder().fit([-1, 1])
 data_test = None
 data_in_memory_sz = 3000
+can_model = True
+
+
+class Stopper(EarlyStopper):
+    def __call__(self, result):
+        ret = False
+        if result.func_vals[-1] == 0.0 or not can_model:
+            ret = True
+        return ret
 
 
 def fit_base_model(model_params, for_optimization=True):
-    global data_in_memory_sz
+    global data_in_memory_sz, can_model
     percent_anomaly = 0.95
     # 50% train-test split
     if dataset == 'kpi':
@@ -48,7 +59,6 @@ def fit_base_model(model_params, for_optimization=True):
     else:
         data_train, data_test = np.array_split(copy.deepcopy(data), 2)
     model = None
-    print(data_train)
 
     if for_optimization:
         data_test = copy.deepcopy(data_train)
@@ -92,10 +102,6 @@ def fit_base_model(model_params, for_optimization=True):
         model = OutlierVAE(threshold=model_params[0], encoder_net=vae_net.encoder_net_vae,
                            decoder_net=vae_net.decoder_net_vae, latent_dim=model_params[1], samples=model_params[2])
         percent_anomaly = model_params[3]
-    elif name == 'seasonal_decomp':
-        model = DecomposeResidual()
-    elif name == 'ensemble':
-        model = Ensemble(filename=filename, anomaly_window=anomaly_window)
     elif name == 'naive':
         model = NaiveDetector(model_params[0], model_params[1], model_params[2], model_params[3], model_params[4])
     elif name == 'mogaal':
@@ -103,8 +109,6 @@ def fit_base_model(model_params, for_optimization=True):
         # need anomalies to properly train mogaal?
         if data_train['is_anomaly'].tolist().count(1) == 0:
             return
-    elif name == 'dp':
-        model = DriftPointModel(driftdetector=ADWIN(delta=0.005), pointdetector=SARIMA(), filename=filename, dataset=dataset)
 
     if name == 'mmd':
         model = MMDDrift(data_train[['value']].to_numpy(), backend='tensorflow', data_type='time-series',
@@ -135,6 +139,7 @@ def fit_base_model(model_params, for_optimization=True):
 
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
+
     elif name == 'lstm':
         X, y = create_dataset(data_train[['value']], data_train[['value']], anomaly_window)
         start_time = time.time()
@@ -145,6 +150,11 @@ def fit_base_model(model_params, for_optimization=True):
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'dp':
         model.fit(copy.deepcopy(data_train[['timestamp', 'value']]))
+
+        # decide if can model via sarima
+        if model.anomaly_detector.model.fittedvalues.tolist().count(0.0) == \
+                len(model.anomaly_detector.model.fittedvalues.tolist()):
+            can_model = False
     elif name == 'sr':
         # DT param!!!!!!!!!!
         # model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
@@ -208,10 +218,12 @@ def fit_base_model(model_params, for_optimization=True):
             #     diff = end_time - start_time
             #     print(f"Trained model {name} on {filename} for {diff}")
 
-    f1 = []
+    batch_metrices = []
+    batched_f1 = []
+    batch_properties = []
     all_labels = []
     y_pred_total = []
-    y_windows = []
+    batches_with_anomalies = []
     idx = 0
     stacked_res = data_train[['timestamp', 'value']]
 
@@ -281,7 +293,11 @@ def fit_base_model(model_params, for_optimization=True):
                     y_pred = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1),
                                            window['timestamp'])
                 elif name == 'dp':
-                    y_pred = model.predict(window[['timestamp', 'value']])
+                    if for_optimization:
+                        y_pred = model.predict(window[['timestamp', 'value']], optimization=True)
+                    else:
+                        y_pred = model.predict(window[['timestamp', 'value']])
+
                 elif name == 'mogaal':
                     y_pred = model.predict(window)
                     print(y_pred)
@@ -371,13 +387,24 @@ def fit_base_model(model_params, for_optimization=True):
                 else:
                     y_pred = model.predict(window[['value', 'timestamp']])
 
-                # try:
-                #     y_pred = le.transform(y_pred).tolist()
-                # except:
-                #     pass
+                try:
+                    y_pred = le.transform(y_pred).tolist()
+                except:
+                    pass
+
+                err = hamming_loss(window['is_anomaly'], y_pred)
+                batch_metrices.append(err)
+                met = precision_recall_fscore_support(window['is_anomaly'], y_pred, average='binary')
+                batched_f1.append(met[2])
+                if window['is_anomaly'].tolist().count(1) > 0:
+                    batches_with_anomalies.append(start // step)
+
+                res = catch22_all(window['value'].tolist())
+                batch_properties.append(res)
 
                 idx += 1
-                if name not in ['lsdd', 'mmd', 'mmd-online', 'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph']:
+                if name not in ['lsdd', 'mmd', 'mmd-online', 'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph',
+                                'dp']:
                     if anomaly_window == step:
                         # Predict the labels (1 inlier, -1 outlier) of X according to LOF.
                         common = Counter(funcy.lflatten(y_pred)[:window.shape[0]]).most_common(1)[0][0]
@@ -403,7 +430,7 @@ def fit_base_model(model_params, for_optimization=True):
                         else:
                             y_pred_total = [0 if val != 1 else 1 for val in funcy.lflatten(y_pred)]
                 else:
-                    if anomaly_window == step:
+                    if anomaly_window == step or name == 'dp':
                         y_pred_total += [val for val in funcy.lflatten(y_pred)[:window.shape[0]]]
                     else:
                         anomaly_window_ = data_in_memory
@@ -429,6 +456,24 @@ def fit_base_model(model_params, for_optimization=True):
         except Exception as e:
             raise e
 
+    if batch_properties:
+        try:
+            df = pd.read_csv(f'results/ts_properties/per_ts/{dataset}_{type}_{filename}.csv')
+        except:
+            df = pd.DataFrame([])
+
+            idx = 1
+            for batch in batch_properties:
+                dict_properties = {}
+                for n, val in zip(batch['names'], batch['values']):
+                    dict_properties[n] = val
+
+                dict_properties['batch'] = idx
+                idx += 1
+                df = df.append(dict_properties, ignore_index=True)
+
+            df.to_csv(f'results/ts_properties/per_ts/{dataset}_{type}_{filename}.csv')
+
     if not for_optimization:
         plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows)
 
@@ -444,7 +489,7 @@ def fit_base_model(model_params, for_optimization=True):
 
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_batched.csv')
             except:
                 stats = pd.DataFrame([])
 
@@ -459,11 +504,15 @@ def fit_base_model(model_params, for_optimization=True):
                 'tp': tp,
                 'tn': tn,
                 'specificity': specificity,
+                'batch_metrics': batch_metrices,
+                'batched_f1_score': batched_f1,
+                'anomaly_idxs': batches_with_anomalies,
                 'total_anomalies': data_test['is_anomaly'].tolist().count(1),
                 'prediction_time': np.mean(pred_time),
                 'total_points': data_test.shape[0]
             }, ignore_index=True)
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_batched.csv', index=False)
+            plot_change(batch_metrices, batches_with_anomalies, name, filename.replace('.csv', ''), dataset)
         # return specificity if no anomalies, else return f1 score
         if data_test['is_anomaly'].tolist().count(1) == 0:
             return 1.0 - specificity
@@ -488,18 +537,24 @@ def fit_base_model(model_params, for_optimization=True):
                 'prediction_time': np.mean(pred_time),
                 'total_points': data_test.shape[0]
             }, ignore_index=True)
-
             stats.to_csv(f'results/{dataset}_{type}_stats_{name}.csv', index=False)
         return latency + fp + misses
 
 
 if __name__ == '__main__':
+    mutual_info_of_features_to_f1()
+    quit()
     if test_drifts:
         learners_to_loop = drift_detectors
     else:
         learners_to_loop = models
 
-    for dataset, type in [('yahoo', 'real'), ('NAB', 'relevant')]:
+    try:
+        hp = pd.read_csv('hyperparams.csv')
+    except:
+        hp = pd.DataFrame([])
+
+    for dataset, type in [('NAB', 'relevant'), ('kpi', 'train')]:
                           # ('kpi', 'train'), ('kpi', 'test')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
@@ -511,11 +566,12 @@ if __name__ == '__main__':
             # if dataset == 'NAB':
             #     train_data_path = root_path + '/datasets/machine_metrics/nab_drift/'
             # else:
-            #     train_data_path = root_path + '/datasets/' + dataset + '/drift/' + type + '/'
+            #     train_data_path = root_path + '/datasets/' + dataset + '/nab_drift/' + type + '/'
             try:
-                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}.csv')
+                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_batched.csv')
             except:
                 statf = pd.DataFrame([])
+
             for filename in os.listdir(train_data_path):
                 print(filename)
                 f = os.path.join(train_data_path, filename)
@@ -524,41 +580,54 @@ if __name__ == '__main__':
                 if os.path.isfile(f) and filename\
                         and (statf.shape[0] == 0 or filename.replace('.csv', '') not in statf['dataset'].tolist()):
                     # and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
-                    print(f"Training model {name} with data {filename}")
                     data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
                     data.drop_duplicates(subset=['timestamp'], keep=False, inplace=True)
 
-                    # if data['is_anomaly'].tolist().count(1) == 0:
-                    #     continue
+                    print(f"Training model {name} with data {filename}")
 
-                    # if dataset == 'kpi':
-                    #     data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/drift/' + 'test' + '/', filename))
-                    #     # print(data_test['is_anomaly'].tolist().count(1))
-                    #     # continue
+                    if dataset == 'kpi':
+                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/test/', filename))
 
-                    try:
-                        fit_base_model(def_params, for_optimization=False)
-                    except Exception as e:
-                        raise e
-                        print(f'Error on {filename}')
-                    quit()
+                    if dataset != 'kpi' and np.array_split(copy.deepcopy(data), 2)[-1]['is_anomaly'].tolist().count(1) == 0:
+                        continue
+                    elif dataset == 'kpi' and data_test['is_anomaly'].tolist().count(1) == 0:
+                        continue
+
+                    can_model = True
+
+                    # try:
+                    #     fit_base_model(def_params, for_optimization=False)
+                    # except Exception as e:
+                    #     raise e
+                    #     print(f'Error on {filename}')
+                    # quit()
 
                     try:
                         if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
                         ################ Bayesian optimization ###################################################
-                            bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                            bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=20,
                                                     random_state=13, verbose=False, x0=def_params)
 
                             print(f"Found hyper parameters for {name}: {bo_result.x}")
 
-                            fit_base_model(bo_result.x, for_optimization=False)
+                            if hp.empty or (filename.replace('.csv', '') not in hp['filename'].tolist() or
+                                            name not in hp['model'].tolist()):
+                                hp = hp.append({
+                                    'filename': filename.replace('.csv', ''),
+                                    'model': name,
+                                    'hp': bo_result.x
+                                }, ignore_index=True)
+
+                                hp.to_csv('hyperparams.csv', index=False)
+
+                            if can_model:
+                                fit_base_model(bo_result.x, for_optimization=False)
                         else:
                             fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
-                        raise e
-                        try:
-                            fit_base_model(def_params, for_optimization=False)
-                        except:
-                            pass
-                        print(f'Error on {filename}')
+                        print('Error:', e)
+                        # try:
+                        #     fit_base_model(def_params, for_optimization=False)
+                        # except:
+                        #     pass
