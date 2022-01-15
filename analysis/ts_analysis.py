@@ -259,24 +259,50 @@ def find_relationship():
 
 
 def permutation_analysis():
+    q = np.arange(0.01, 100, 0.01).tolist()
+    step = 100
+
     for dataset, subsets in [('NAB', ['relevant'])]:
         for tss in subsets:
             train_data_path = 'datasets/' + dataset + '/' + tss + '/'
             hcs = pd.DataFrame([])
             for filename in os.listdir(train_data_path):
+                print(filename)
                 f = os.path.join(train_data_path, filename)
                 ts = pd.read_csv(f)
-                hc = ordpy.complexity_entropy(ts['value'].to_numpy(), dx=4)
-                hcs = hcs.append({
-                    'ts': filename,
-                    'permutation_entropy': hc[0],
-                    'statistical_complexity': hc[1]
-                }, ignore_index=True)
-                if hc[1] > 0.15:
-                    print(filename)
-                    print(hc)
-                    # plt.plot(ts['timestamp'], ts['value'])
-                    # plt.show()
+                # hc = ordpy.complexity_entropy(ts['value'].to_numpy(), dx=4)
+                # hcs = hcs.append({
+                #     'ts': filename,
+                #     'permutation_entropy': hc[0],
+                #     'statistical_complexity': hc[1]
+                # }, ignore_index=True)
+                # if hc[1] > 0.15:
+                #     print(filename)
+                #     print(hc)
+                #     # plt.plot(ts['timestamp'], ts['value'])
+                #     # plt.show()
+
+                max_qs, max_cs = [], []
+                batches_anomalies = []
+                for start in range(0, ts.shape[0], step):
+                    window = ts.iloc[start:start + step]
+                    if window.shape[0] == step:
+                        curve = ordpy.tsallis_complexity_entropy(window['value'].to_numpy(), dx=4, q=q)
+                        max_q, max_c = np.max([a[0] for a in curve]), np.max([a[1] for a in curve])
+                        max_cs.append(max_c)
+                        max_qs.append(max_q)
+                        if window['is_anomaly'].tolist().count(1) > 0:
+                            batches_anomalies.append(start // step)
+
+                color = ['red' if i in batches_anomalies else 'blue' for i in range(ts.shape[0] // step)]
+                fig, axs = plt.subplots(2)
+                axs[0].bar(list(range(ts.shape[0] // step)), max_qs, color=color)
+                axs[0].set_ylabel('q_H*')
+                axs[1].bar(list(range(ts.shape[0] // step)), max_cs, color=color)
+                axs[1].set_ylabel('q_C*')
+                axs[1].set_xlabel('Batch')
+
+                fig.savefig(f'results/ts_properties/imgs/entropy_analysis/max_q_{dataset}_{tss}_{filename.replace(".csv", "")}.png')
 
             # hcs.to_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv')
             #
