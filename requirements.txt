@@ -3,7 +3,6 @@ plotly
 tensorflow
 tsfresh
 nolds
-catch22
 tslearn
 skopt
 pycaret
@@ -17,4 +16,7 @@ scipy
 seaborn
 six
 statsmodels
-skmultiflow
+scikit-multiflow
+catch22
+ordpy
+pycaret
