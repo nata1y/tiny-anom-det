@@ -20,3 +20,4 @@ scikit-multiflow
 catch22
 ordpy
 pycaret
+antropy

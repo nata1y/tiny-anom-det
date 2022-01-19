@@ -1,3 +1,4 @@
+import ast
 import copy
 import os
 from collections import Counter
@@ -8,7 +9,7 @@ from sklearn import preprocessing
 from skopt.callbacks import EarlyStopper
 
 from analysis.ts_analysis import find_relationship, ts_properties_to_accuracy, mutual_info_of_features_to_f1, \
-    permutation_analysis
+    permutation_analysis, performance
 from models.decompose_model import DecomposeResidual
 from utils import drift_metrics, plot_general, plot_change, score_per_anomaly_group, analyze_anomalies, avg_batch_f1
 
@@ -542,8 +543,6 @@ def fit_base_model(model_params, for_optimization=True):
 
 
 if __name__ == '__main__':
-    mutual_info_of_features_to_f1()
-    quit()
     if test_drifts:
         learners_to_loop = drift_detectors
     else:
@@ -554,7 +553,7 @@ if __name__ == '__main__':
     except:
         hp = pd.DataFrame([])
 
-    for dataset, type in [('NAB', 'relevant'), ('kpi', 'train')]:
+    for dataset, type in [('NAB', 'relevant')]:
                           # ('kpi', 'train'), ('kpi', 'test')]:
                           # ('yahoo', 'real'),
                           # ('kpi', 'train'), ('yahoo', 'A4Benchmark'),
@@ -596,30 +595,28 @@ if __name__ == '__main__':
 
                     can_model = True
 
-                    # try:
-                    #     fit_base_model(def_params, for_optimization=False)
-                    # except Exception as e:
-                    #     raise e
-                    #     print(f'Error on {filename}')
-                    # quit()
-
                     try:
                         if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
                         ################ Bayesian optimization ###################################################
-                            bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=20,
-                                                    random_state=13, verbose=False, x0=def_params)
+                            if hp[(hp['filename'] == filename) & (hp['model'] == name)].empty:
+                                bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=20,
+                                                        random_state=13, verbose=False, x0=def_params)
 
-                            print(f"Found hyper parameters for {name}: {bo_result.x}")
+                                print(f"Found hyper parameters for {name}: {bo_result.x}")
 
-                            if hp.empty or (filename.replace('.csv', '') not in hp['filename'].tolist() or
-                                            name not in hp['model'].tolist()):
-                                hp = hp.append({
-                                    'filename': filename.replace('.csv', ''),
-                                    'model': name,
-                                    'hp': bo_result.x
-                                }, ignore_index=True)
+                                if hp.empty or (filename.replace('.csv', '') not in hp['filename'].tolist() and
+                                                name not in hp['model'].tolist()):
+                                    hp = hp.append({
+                                        'filename': filename.replace('.csv', ''),
+                                        'model': name,
+                                        'hp': bo_result.x
+                                    }, ignore_index=True)
 
-                                hp.to_csv('hyperparams.csv', index=False)
+                                    hp.to_csv('hyperparams.csv', index=False)
+                            else:
+                                bo_result = {
+                                    'x': ast.literal_eval(hp[(hp['filename'] == filename) & (hp['model'] == name)]['hp'].tolist()[0])
+                                }
 
                             if can_model:
                                 fit_base_model(bo_result.x, for_optimization=False)
@@ -627,6 +624,7 @@ if __name__ == '__main__':
                             fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
                         print('Error:', e)
+                        raise e
                         # try:
                         #     fit_base_model(def_params, for_optimization=False)
                         # except:
