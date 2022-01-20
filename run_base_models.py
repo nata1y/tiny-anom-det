@@ -1,6 +1,7 @@
 import ast
 import copy
 import os
+import mock
 from collections import Counter
 
 import funcy
@@ -14,7 +15,7 @@ from models.decompose_model import DecomposeResidual
 from utils import drift_metrics, plot_general, plot_change, score_per_anomaly_group, analyze_anomalies, avg_batch_f1
 
 from sklearn.ensemble import IsolationForest
-from sklearn.metrics import confusion_matrix, mean_absolute_error, hamming_loss
+from sklearn.metrics import confusion_matrix, mean_absolute_error, hamming_loss, f1_score
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import OneClassSVM
 from skopt import gp_minimize
@@ -231,6 +232,9 @@ def fit_base_model(model_params, for_optimization=True):
     pred_time = []
     drift_windows = []
 
+    batches_predicted = []
+    batches_real = []
+
     for start in range(0, data_test.shape[0], step):
         try:
             start_time = time.time()
@@ -403,6 +407,16 @@ def fit_base_model(model_params, for_optimization=True):
                 res = catch22_all(window['value'].tolist())
                 batch_properties.append(res)
 
+                if y_pred.count(1) > 0:
+                    batches_predicted.append(1)
+                else:
+                    batches_predicted.append(0)
+
+                if window['is_anomaly'].tolist().count(1) > 0:
+                    batches_real.append(1)
+                else:
+                    batches_real.append(0)
+
                 idx += 1
                 if name not in ['lsdd', 'mmd', 'mmd-online', 'adwin', 'ddm', 'eddm', 'hddma', 'hddmw', 'kswin', 'ph',
                                 'dp']:
@@ -490,29 +504,37 @@ def fit_base_model(model_params, for_optimization=True):
 
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_batched.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_per_batch.csv')
             except:
                 stats = pd.DataFrame([])
 
             stats = stats.append({
+                # 'model': name,
+                # 'dataset': filename.replace('.csv', ''),
+                # 'f1': met_total[2],
+                # 'precision': met_total[0],
+                # 'recall': met_total[1],
+                # 'fp': fp,
+                # 'fn': fn,
+                # 'tp': tp,
+                # 'tn': tn,
+                # 'specificity': specificity,
+                # 'batch_metrics': batch_metrices,
+                # 'batched_f1_score': batched_f1,
+                # 'anomaly_idxs': batches_with_anomalies,
+                # 'total_anomalies': data_test['is_anomaly'].tolist().count(1),
+                # 'prediction_time': np.mean(pred_time),
+                # 'total_points': data_test.shape[0]
+                'ts': filename.replace('.csv', ''),
+                'y_pred': batches_predicted,
+                'y_true': batches_real,
+                'f1': f1_score(batches_real, batches_predicted, average='binary'),
+                'hamming': hamming_loss(batches_real, batches_predicted),
+                'step': 100,
                 'model': name,
-                'dataset': filename.replace('.csv', ''),
-                'f1': met_total[2],
-                'precision': met_total[0],
-                'recall': met_total[1],
-                'fp': fp,
-                'fn': fn,
-                'tp': tp,
-                'tn': tn,
-                'specificity': specificity,
-                'batch_metrics': batch_metrices,
-                'batched_f1_score': batched_f1,
-                'anomaly_idxs': batches_with_anomalies,
-                'total_anomalies': data_test['is_anomaly'].tolist().count(1),
-                'prediction_time': np.mean(pred_time),
-                'total_points': data_test.shape[0]
+                'total_anomalies': batches_real.count(1)
             }, ignore_index=True)
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_batched.csv', index=False)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_per_batch.csv', index=False)
             plot_change(batch_metrices, batches_with_anomalies, name, filename.replace('.csv', ''), dataset)
         # return specificity if no anomalies, else return f1 score
         if data_test['is_anomaly'].tolist().count(1) == 0:
@@ -567,7 +589,7 @@ if __name__ == '__main__':
             # else:
             #     train_data_path = root_path + '/datasets/' + dataset + '/nab_drift/' + type + '/'
             try:
-                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_batched.csv')
+                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_per_batch.csv')
             except:
                 statf = pd.DataFrame([])
 
@@ -577,11 +599,12 @@ if __name__ == '__main__':
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
                 # machine_data_path = f'datasets/machine_metrics/relevant/'
                 if os.path.isfile(f) and filename\
-                        and (statf.shape[0] == 0 or filename.replace('.csv', '') not in statf['dataset'].tolist()):
+                        and (statf.shape[0] == 0 or filename.replace('.csv', '') not in statf['ts'].tolist()):
                     # and f'{name}_{filename.split(".")[0]}.png' in os.listdir(res_data_path):
                     data = pd.read_csv(f)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
                     data.drop_duplicates(subset=['timestamp'], keep=False, inplace=True)
+                    data.dropna(inplace=True)
 
                     print(f"Training model {name} with data {filename}")
 
@@ -599,8 +622,15 @@ if __name__ == '__main__':
                         if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
                         ################ Bayesian optimization ###################################################
                             if hp[(hp['filename'] == filename) & (hp['model'] == name)].empty:
-                                bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=20,
-                                                        random_state=13, verbose=False, x0=def_params)
+
+                                try:
+                                    bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=20,
+                                                            random_state=13, verbose=False, x0=def_params)
+                                except ValueError as e:
+                                    # error is rised when function yields constant value and does not converge
+                                    print(e)
+                                    bo_result = mock.Mock()
+                                    bo_result.x = def_params
 
                                 print(f"Found hyper parameters for {name}: {bo_result.x}")
 
@@ -614,9 +644,8 @@ if __name__ == '__main__':
 
                                     hp.to_csv('hyperparams.csv', index=False)
                             else:
-                                bo_result = {
-                                    'x': ast.literal_eval(hp[(hp['filename'] == filename) & (hp['model'] == name)]['hp'].tolist()[0])
-                                }
+                                bo_result = mock.Mock()
+                                bo_result.x = ast.literal_eval(hp[(hp['filename'] == filename) & (hp['model'] == name)]['hp'].tolist()[0])
 
                             if can_model:
                                 fit_base_model(bo_result.x, for_optimization=False)
