@@ -2,17 +2,16 @@
 import copy
 
 import nolds
+import ordpy
 import pandas as pd
 import os
-import ordpy
 import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
+from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import f1_score, hamming_loss
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-import antropy as ant
 
 
 def machine_ts_to_features_correlation():
@@ -172,8 +171,8 @@ def mutual_info_of_features_to_f1():
     res = pd.DataFrame([])
     idx = 0
     cols = ['permutation_entropy', 'statistical_complexity', 'lyapunov_exp_max',
-                                        'spectral_entropy', 'value_decomposition_entropy', 'approximate_entropy',
-                                        'sample_entropy']
+                                   'spectral_entropy', 'value_decomposition_entropy', 'approximate_entropy',
+                                   'sample_entropy']
     # cols = ['DN_HistogramMode_5', 'DN_HistogramMode_10', 'CO_f1ecac', 'CO_FirstMin_ac',
     #                                         'CO_HistogramAMI_even_2_5',	'CO_trev_1_num', 'MD_hrv_classic_pnn40',
     #                                         'SB_BinaryStats_mean_longstretch1',	'SB_TransitionMatrix_3ac_sumdiagcov',
@@ -266,206 +265,76 @@ def find_relationship():
             plt.clf()
 
 
-def permutation_analysis():
-    q = np.arange(0.01, 100, 0.01).tolist()
-
-    for entropy_name in ['spectral_entropy', 'value_decomposition_entropy', 'approximate_entropy',
-                         'sample_entropy', 'permutation_entropy', 'renyi', 'tsallis']:
-        # approximate & value decompose
-        print(f'Doing entropy {entropy_name}')
-        for dataset, subsets in [('NAB', ['relevant']), ('kpi', ['train'])]:
-                for tss in subsets:
-                    hcs = pd.DataFrame([])
-                    train_data_path = 'datasets/' + dataset + '/' + tss + '/'
-
-                    res = pd.DataFrame([])
-                    for filename in os.listdir(train_data_path):
-                        print(filename)
-                        f = os.path.join(train_data_path, filename)
-                        ts = pd.read_csv(f)
-                        ts.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
-
-                        # lyapunov_e = nolds.lyap_r(ts['value'].to_numpy())
-                    #
-                    # if lyapunov_e > 0.0:
-                    #     lyapunov_e = 1.0
-                    # elif lyapunov_e < 0.0:
-                    #     lyapunov_e = -1.0
-                    #
-                    # hc = ordpy.complexity_entropy(ts['value'].to_numpy(), dx=4)
-                    #
-                    # hcs = hcs.append({
-                    #     'ts': filename.replace('.csv', ''),
-                    #     'permutation_entropy': hc[0],
-                    #     'statistical_complexity': hc[1],
-                    #     'lyapunov_exp_max': lyapunov_e,
-                    #     'spectral_entropy': ant.spectral_entropy(ts['value'].to_numpy(), sf=100, method='welch', normalize=True),
-                    #     'value_decomposition_entropy': ant.svd_entropy(ts['value'].to_numpy(), normalize=True),
-                    #     'approximate_entropy': ant.app_entropy(ts['value'].to_numpy()),
-                    #     'sample_entropy': ant.sample_entropy(ts['value'].to_numpy()),
-                    #     'hjorth_entropy': ant.hjorth_params(ts['value'].to_numpy())
-                    # }, ignore_index=True)
-
-                    # continue
-                    #
-                    # if hc[1] > 0.15:
-                    #     print(filename)
-                    #     print(hc)
-                    #     # plt.plot(ts['timestamp'], ts['value'])
-                    #     # plt.show()
-                        max_qs, max_cs = [], []
-                        batches_anomalies = []
-                        entropies = []
-                        interval = 100
-                        step = 100
-                        collected_entropies = []
-                        mean_entropy, std_entropy, boundary_up, boundary_bottom = None, None, None, None
-                        y_predicted = []
-                        y_true = []
-
-                        try:
-                            for start in range(0, ts.shape[0], step):
-                                window = ts.iloc[start:start+step]
-                                if window.shape[0] == step:
-                                    # curve = ordpy.tsallis_complexity_entropy(window['value'].to_numpy(), dx=4, q=q)
-                                    # max_q, max_c = np.max([a[0] for a in curve]), np.max([a[1] for a in curve])
-                                    # max_cs.append(max_c)
-                                    # max_qs.append(max_q)
-
-                                    if start < ts.shape[0] // 2 and window['is_anomaly'].tolist().count(1) == 0:
-                                        if entropy_name == 'spectral_entropy':
-                                            collected_entropies.append(ant.spectral_entropy(window['value'].to_numpy(),
-                                                                                  sf=100, method='welch',
-                                                                                  normalize=True))
-                                        elif entropy_name == 'value_decomposition_entropy':
-                                            collected_entropies.append(
-                                                ant.svd_entropy(window['value'].to_numpy(), normalize=True))
-                                        elif entropy_name == 'approximate_entropy':
-                                            collected_entropies.append(ant.app_entropy(window['value'].to_numpy()))
-                                        elif entropy_name == 'sample_entropy':
-                                            collected_entropies.append(ant.sample_entropy(window['value'].to_numpy()))
-                                        elif entropy_name == 'hjorth_entropy':
-                                            collected_entropies.append(ant.hjorth_params(window['value'].to_numpy()))
-                                        elif entropy_name == 'permutation_entropy':
-                                            collected_entropies.append(ant.perm_entropy(window['value'].to_numpy(), normalize=True))
-                                        elif entropy_name == 'tsallis':
-                                            collected_entropies.append(
-                                                ordpy.tsallis_entropy(window['value'].to_numpy()))
-                                        elif entropy_name == 'renyi':
-                                            collected_entropies.append(
-                                                ordpy.renyi_entropy(window['value'].to_numpy()))
-
-                                    elif start >= ts.shape[0] // 2 and not mean_entropy:
-                                        mean_entropy = np.mean(collected_entropies)
-                                        std_entropy = np.std(collected_entropies)
-                                        # boundary_bottom = mean_entropy - 1.25 * std_entropy
-                                        # boundary_up = mean_entropy + 1.25 * std_entropy
-                                        boundary_bottom = np.min(collected_entropies) * 0.9
-                                        boundary_up = np.max(collected_entropies) * 1.1
-
-                                    if entropy_name == 'spectral_entropy':
-                                        entropies.append(ant.spectral_entropy(window['value'].to_numpy(),
-                                                                              sf=100, method='welch', normalize=True))
-                                    elif entropy_name == 'value_decomposition_entropy':
-                                        entropies.append(ant.svd_entropy(window['value'].to_numpy(), normalize=True))
-                                    elif entropy_name == 'approximate_entropy':
-                                        entropies.append(ant.app_entropy(window['value'].to_numpy()))
-                                    elif entropy_name == 'sample_entropy':
-                                        entropies.append(ant.sample_entropy(window['value'].to_numpy()))
-                                    elif entropy_name == 'hjorth_entropy':
-                                        entropies.append(ant.hjorth_params(window['value'].to_numpy()))
-                                    elif entropy_name == 'permutation_entropy':
-                                        entropies.append(
-                                            ant.perm_entropy(window['value'].to_numpy(), normalize=True))
-                                    elif entropy_name == 'tsallis':
-                                        entropies.append(
-                                            ordpy.tsallis_entropy(window['value'].to_numpy()))
-                                    elif entropy_name == 'renyi':
-                                        entropies.append(
-                                            ordpy.renyi_entropy(window['value'].to_numpy()))
-
-                                    if window['is_anomaly'].tolist().count(1) > 0:
-                                        batches_anomalies.append(start // step)
-
-                                    if mean_entropy:
-                                        if boundary_bottom <= entropies[-1] <= boundary_up:
-                                            y_predicted.append(0)
-                                        else:
-                                            y_predicted.append(1)
-
-                                        if window['is_anomaly'].tolist().count(1) > 0:
-                                            y_true.append(1)
-                                        else:
-                                            y_true.append(0)
-
-                            color = ['red' if i in batches_anomalies else 'blue' for i in range(len(entropies))]
-
-                            plt.bar(list(range(len(entropies))), entropies, color=color)
-                            plt.axvline(x=int(ts.shape[0] // (2 * step)), color='orange', linestyle='--', label='train-test separation')
-                            plt.axhline(y=boundary_bottom, color='gray', linestyle='--')
-                            plt.axhline(y=boundary_up, color='gray', linestyle='--')
-
-                            plt.legend()
-                            plt.ylabel(entropy_name)
-                            plt.xlabel('Batch')
-
-                            # fig, axs = plt.subplots(2)
-                            # axs[0].bar(list(range(len(max_cs))), max_qs, color=color)
-                            # axs[0].axvline(x=int(ts.shape[0] // (2 * step)), color='k', linestyle='--')
-                            #
-                            # axs[0].set_ylabel('q_H*')
-                            #
-                            # axs[1].bar(list(range(len(max_cs))), max_cs, color=color)
-                            # axs[1].axvline(x=int(ts.shape[0] // (2 * step)), color='k', linestyle='--')
-                            #
-                            # axs[1].set_ylabel('q_C*')
-                            # axs[1].set_xlabel('Batch')
-
-                            plt.savefig(f'results/ts_properties/imgs/entropy_analysis/{entropy_name}_{dataset}_{tss}_{filename.replace(".csv", "")}_step_100.png')
-                            plt.clf()
-
-                            res = res.append({
-                                'ts': filename.replace('.csv', ''),
-                                'y_pred': y_predicted,
-                                'y_true': y_true,
-                                'f1': f1_score(y_true, y_predicted, average='binary'),
-                                'hamming': hamming_loss(y_true, y_predicted),
-                                'step': 100,
-                                'entropy': entropy_name,
-                                'total_anomalies': y_true.count(1)
-
-                            }, ignore_index=True)
-                        except Exception as e:
-                            raise e
-                    res.to_csv(f'results/ts_properties/entropies/{entropy_name}_{dataset}_{tss}.csv')
-            # hcs.to_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv')
-
-            # f, ax = plt.subplots(figsize=(8.19, 6.3))
-            #
-            # for idx, row in hcs.iterrows():
-            #     ax.scatter(x=row['permutation_entropy'], y=row['statistical_complexity'], s=100)
-            #
-            # ax.set_xlabel('Permutation entropy, $H$')
-            # ax.set_ylabel('Statistical complexity, $C$')
-            #
-            # f.savefig(f'results/ts_properties/imgs/permutation_analysis_{dataset}_{tss}.png')
-
-
 def performance():
-    for dataset, subsets in [('NAB', ['relevant']), ('yahoo', ['real', 'synthetic'])]:
+    df = pd.DataFrame([])
+    for dataset, subsets in [('NAB', ['relevant'])]:
         for tss in subsets:
-            train_data_path = 'datasets/' + dataset + '/' + tss + '/'
-            chaos = pd.read_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv').set_index('ts')
-            for model in ['sr', 'sarima', 'lstm']:
-                f1 = []
-                performance = f'C:\\Users\\oxifl\\Desktop\\batched_metrics\\{dataset}_{tss}_stats_{model}_batched.csv'
-                performance = pd.read_csv(performance).set_index('dataset')
-                for filename in os.listdir(train_data_path):
-                    try:
-                        laypunov = chaos.loc[filename, 'lyapunov_exp_max']
-                        if laypunov <= 0:
-                            f1.append(performance.loc[filename.replace('.csv', ''), 'f1'])
-                    except:
-                        pass
+            try:
+                train_data_path = 'datasets/' + dataset + '/' + tss + '/'
+                chaos = pd.read_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv').dropna(subset=['ts'])
+                for model in ['sr', 'sarima', 'lstm']:
+                    performance = f'results/{dataset}_{tss}_stats_{model}_per_batch.csv'
+                    performance = pd.read_csv(performance).dropna(subset=['ts'])
+                    chaos = chaos.merge(performance, how='inner', on='ts').set_index('ts')
+                    performance = performance.set_index('ts')
 
-                print(f"For model {model}, dataset {dataset} of part {tss}, avg f1 is {np.mean(f1)}")
+                    mis = mutual_info_classif(performance[['f1']], chaos['lyapunov_exp_max'])
+                    df = df.append({
+                        'dataset': dataset,
+                        'tss': tss,
+                        'model': model,
+                        'mutual_info': mis
+                    }, ignore_index=True)
+                    for le in ['chaotic', 'periodic', 'steady']:
+                        f1 = []
+                        for filename in os.listdir(train_data_path):
+                            try:
+                                laypunov = chaos.loc[filename.replace('.csv', ''), 'lyapunov_exp_max']
+                                if laypunov == le and pd.notna(performance.loc[filename.replace('.csv', ''), 'f1']):
+                                    f1.append(performance.loc[filename.replace('.csv', ''), 'f1'])
+                            except:
+                                pass
+
+                        print(f"For model {model}, dataset {dataset} of part {tss}, avg f1 is {np.mean(f1)} on {le} ts's")
+            except Exception as e:
+                print(e)
+
+    df.to_csv('results/ts_properties/discreate_mutual_info_f1_per_dataset.csv')
+
+
+def complexity_entropy_analysis():
+    import matplotlib.pyplot as plt
+    for dataset, subsets in [('NAB', ['relevant']),
+                             ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
+        for tss in subsets:
+            print(tss)
+            df = pd.read_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv')
+
+            f, ax = plt.subplots(figsize=(8.19, 6.3))
+
+            for idx, row in df.iterrows():
+                # fl = row['ts']
+                # if '.csv' not in fl:
+                #     fl += '.csv'
+                # ts = pd.read_csv('datasets/' + dataset + '/' + tss + '/' + fl)
+                # ts.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+                lyapunov_e = row['lyapunov_exp_max']
+
+                if lyapunov_e == 'chaotic':
+                    # chaos
+                    color = 'red'
+                elif lyapunov_e == 'steady':
+                    # steady
+                    color = 'blue'
+                else:
+                    # periodic
+                    color = 'green'
+
+                ax.scatter(x=row['permutation_entropy'], y=row['statistical_complexity'], s=100, color=color)
+
+            ax.set_xlabel('Permutation entropy, $H$')
+            ax.set_ylabel('Statistical complexity, $C$')
+            ax.set_title(f'{dataset}: {tss}')
+            df.to_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv')
+
+            f.savefig(f'results/ts_properties/imgs/permutation_analysis_{dataset}_{tss}_lyapunove.png')

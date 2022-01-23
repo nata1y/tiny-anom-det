@@ -127,6 +127,7 @@ class SARIMA:
         print('=====================================')
         print(self.model.fittedvalues.tail())
         print(newdf.head())
+        print(optimization)
 
         try:
             if not optimization:
@@ -144,7 +145,7 @@ class SARIMA:
                     if in_dp:
                         newdf = newdf[0:1]
                     self.model = self.model.append(newdf)
-        except ValueError as e:
+        except Exception as e:
             if not optimization:
                 stuffed_value = pd.DataFrame([])
                 stuffed_value['timestamp'] = pd.date_range(start=self.model.fittedvalues.index.max(), end=newdf.index.min(),
