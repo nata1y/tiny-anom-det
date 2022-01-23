@@ -46,9 +46,11 @@ class SARIMA:
         return my_freq
 
     def _get_time_index(self, data):
-        if self.dataset in ['yahoo', 'kpi']:
+        if self.dataset == 'yahoo':
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
-            print(data.head())
+            data.set_index('timestamp', inplace=True)
+            self.freq = data.index.inferred_freq
+            return data
         if self.dataset in ['NAB']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], infer_datetime_format=True)
             # preprocessing depending on TS.....
@@ -59,22 +61,15 @@ class SARIMA:
             data = data.asfreq(self.freq)
 
             return data
-        data.set_index('timestamp', inplace=True)
-        self.freq = data.index.inferred_freq
         if self.dataset in ['kpi']:
+            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
+            data.set_index('timestamp', inplace=True)
             data = data[~data.index.duplicated(keep='first')]
+
+            self.freq = self._check_freq(data.index)
             data = data.asfreq(self.freq)
-            if self.model:
-                dti = pd.DataFrame([])
-                dti.loc[:, 'timestamp'] = pd.date_range(self.model.fittedvalues.index.max() + pd.Timedelta(minutes=5),
-                                                        periods=data.shape[0], freq="T")
-                dti.set_index('timestamp', inplace=True)
-                dti['value'] = None
-                res = pd.concat((data, dti)).sort_values(by='value')
-                res = res[~res.index.duplicated(keep='first')]
-                res = res.sort_index()
-                return res
-        return data
+            print(data.head())
+            return data
 
     def fit(self, data, dataset):
         period = 12
@@ -116,7 +111,7 @@ class SARIMA:
                 except Exception as e:
                     print(e)
 
-        print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
+        # print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
         self.model = self.model.fit()
         # print(self.model.summary())
         self.latest_train_snippest = data
@@ -127,6 +122,7 @@ class SARIMA:
         print('=====================================')
         print(self.model.fittedvalues.tail())
         print(newdf.head())
+        print(newdf.tail())
         print(optimization)
 
         try:
@@ -145,7 +141,7 @@ class SARIMA:
                     if in_dp:
                         newdf = newdf[0:1]
                     self.model = self.model.append(newdf)
-        except Exception as e:
+        except ValueError as e:
             if not optimization:
                 stuffed_value = pd.DataFrame([])
                 stuffed_value['timestamp'] = pd.date_range(start=self.model.fittedvalues.index.max(), end=newdf.index.min(),
