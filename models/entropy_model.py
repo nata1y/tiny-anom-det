@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import antropy as ant
-from sklearn.metrics import f1_score, hamming_loss
+from sklearn.metrics import f1_score, hamming_loss, confusion_matrix
 
 
 def entropy_modelling():
@@ -60,7 +60,7 @@ def entropy_modelling():
                                 # max_cs.append(max_c)
                                 # max_qs.append(max_q)
 
-                                if start < ts1.shape[0] // 2:
+                                if True:
                                     if entropy_name == 'spectral_entropy':
                                         collected_entropies.append(ant.spectral_entropy(window['value'].to_numpy(),
                                                                               sf=100, method='welch',
@@ -87,17 +87,21 @@ def entropy_modelling():
                                         entropy_differences.append(
                                             abs(collected_entropies[-1] - collected_entropies[-2]))
 
+                                    if window['is_anomaly'].tolist().count(1) > 0:
+                                        batches_anomalies.append(start // step)
+                                    else:
+                                        entropies_no_anomalies.append(collected_entropies[-1])
+
                             entropies = copy.deepcopy(collected_entropies)
-                            mean_entropy = np.mean(collected_entropies)
-                            # std_entropy = np.std(collected_entropies)
-                            # boundary_bottom = mean_entropy - 3 * std_entropy
-                            # boundary_up = mean_entropy + 3 * std_entropy
+                            mean_entropy = np.mean(entropies_no_anomalies)
+                            std_entropy = np.std(entropies_no_anomalies)
+                            boundary_bottom = mean_entropy - std_entropy
+                            boundary_up = mean_entropy + std_entropy
 
-                            accepted_difference = np.mean(entropy_differences) + 2 * np.std(entropy_differences)
+                            # accepted_difference = np.mean(entropy_differences) + np.std(entropy_differences)
 
-                            # entropies_no_anomalies = copy.deepcopy(entropies)
-                            boundary_bottom = np.min(collected_entropies) # * 0.9
-                            boundary_up = np.max(collected_entropies) # * 1.1
+                            # boundary_bottom = np.min(entropies_no_anomalies) # * 0.9
+                            # boundary_up = np.max(entropies_no_anomalies) # * 1.1
 
                             for start in range(0, ts2.shape[0], step):
                                 window = ts2.iloc[start:start + step]
@@ -124,32 +128,30 @@ def entropy_modelling():
                                             ordpy.renyi_entropy(window['value'].to_numpy()))
 
                                     if window['is_anomaly'].tolist().count(1) > 0:
-                                        batches_anomalies.append(start // step)
+                                        batches_anomalies.append(len(collected_entropies) + (start // step))
 
                                     if mean_entropy:
-                                        # rolling = pd.DataFrame(entropies_no_anomalies[:-1]).rolling(3)
+                                        # rolling = pd.DataFrame(entropies[:-1]).rolling(5)
                                         # rolling_mean = rolling.mean()
                                         # rolling_std = rolling.std()
-
+                                        #
                                         # boundary_bottom = (rolling_mean - 3 * rolling_std)[0].tolist()[-1]
-                                        # boundary_up = (rolling_mean + 2 * rolling_std)[0].tolist()[-1]
-
+                                        # boundary_up = (rolling_mean + 3 * rolling_std)[0].tolist()[-1]
+                                        #
                                         # boundaries_bottom.append(boundary_bottom)
                                         # boundaries_up.append(boundary_up)
 
-                                        # if boundary_bottom <= entropies[-1] <= boundary_up:
+                                        if boundary_bottom <= entropies[-1] <= boundary_up:
+                                            y_predicted.append(0)
+                                        else:
+                                            y_predicted.append(1)
+                                        #
+                                        # if abs(entropies[-1] - entropies[-2]) <= accepted_difference:
                                         #     y_predicted.append(0)
                                         #     entropies_no_anomalies.append(entropies[-1])
                                         # else:
                                         #     y_predicted.append(1)
                                         #     entropies_no_anomalies.append(entropies[-1])
-
-                                        if abs(entropies[-1] - entropies[-2]) <= accepted_difference:
-                                            y_predicted.append(0)
-                                            entropies_no_anomalies.append(entropies[-1])
-                                        else:
-                                            y_predicted.append(1)
-                                            entropies_no_anomalies.append(entropies[-1])
 
                                         if window['is_anomaly'].tolist().count(1) > 0:
                                             y_true.append(1)
@@ -163,7 +165,15 @@ def entropy_modelling():
                             # rolling_std = rolling.std()
 
                             plt.bar(list(range(len(entropies))), entropies, color=color)
-                            plt.axvline(x=int(ts.shape[0] // (2 * step)), color='orange',
+                            # plt.fill_between(list(range(1, len(entropies))),
+                            #                  list(map(lambda x: x-accepted_difference, entropies[:-1])),
+                            #                  list(map(lambda x: x+accepted_difference, entropies[:-1])),
+                            #                  color='b', alpha=.5)
+                            # plt.fill_between(list(range(len(collected_entropies), len(entropies))),
+                            #                  boundaries_bottom,
+                            #                  boundaries_up,
+                            #                  color='b', alpha=.5)
+                            plt.axvline(x=int(len(entropies) // 2), color='orange',
                                         linestyle='--', label='train-test separation')
                             plt.axhline(y=boundary_bottom, color='y', linestyle='--')
                             plt.axhline(y=boundary_up, color='y', linestyle='--')
@@ -196,8 +206,15 @@ def entropy_modelling():
                             # axs[1].set_ylabel('q_C*')
                             # axs[1].set_xlabel('Batch')
 
-                            # plt.savefig(f'results/ts_properties/imgs/entropy_analysis/{entropy_name}_{dataset}_{tss}_{filename.replace(".csv", "")}_step_{step}_minmax.png')
+                            plt.savefig(f'results/ts_properties/imgs/entropy_analysis/{entropy_name}_{dataset}_{tss}_{filename.replace(".csv", "")}_step_{step}_std.png')
                             plt.clf()
+
+                            try:
+                                tn, fp, fn, tp = confusion_matrix(y_true, y_predicted).ravel()
+                            except:
+                                tn, fp, fn, tp = len([1 for i in range(len(y_true)) if y_true[i] == y_predicted[i] == 0]),\
+                                                 len([1 for i in range(len(y_true)) if y_true[i] + 1 == y_predicted[i]]), \
+                                                 0, 0
 
                             res = res.append({
                                 'ts': filename.replace('.csv', ''),
@@ -207,10 +224,14 @@ def entropy_modelling():
                                 'hamming': hamming_loss(y_true, y_predicted),
                                 'step': step,
                                 'entropy': entropy_name,
-                                'total_anomalies': y_true.count(1)
-
+                                'total_anomalies': y_true.count(1),
+                                'fp': fp,
+                                'fn': fn,
+                                'tp': tp,
+                                'tn': tn
                             }, ignore_index=True)
                         except Exception as e:
-                            print()
-                    res.to_csv(f'results/ts_properties/entropies/{entropy_name}_{dataset}_{tss}_step_{step}_diff.csv')
+                            raise e
+
+                    res.to_csv(f'results/ts_properties/entropies/{entropy_name}_{dataset}_{tss}_step_{step}_std.csv')
             # hcs.to_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv')

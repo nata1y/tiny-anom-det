@@ -3,6 +3,7 @@ import copy
 import datetime
 import itertools
 import math
+import sys
 from collections import Counter
 
 import funcy
@@ -36,7 +37,7 @@ class SARIMA:
         self.train_size = train_size
         self.latest_train_snippest = pd.DataFrame([])
         self.result_memory_size = 1000
-        self.memory_threshold = 1300
+        self.memory_threshold = 1000
         self.freq = None
 
     def _check_freq(self, idx):
@@ -68,7 +69,6 @@ class SARIMA:
 
             self.freq = self._check_freq(data.index)
             data = data.asfreq(self.freq)
-            print(data.head())
             return data
 
     def fit(self, data, dataset):
@@ -110,6 +110,7 @@ class SARIMA:
 
                 except Exception as e:
                     print(e)
+                    print('error 222')
 
         # print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
         self.model = self.model.fit()
@@ -119,11 +120,12 @@ class SARIMA:
     def predict(self, newdf, optimization=False, in_dp=False):
         y_pred = []
         newdf = self._get_time_index(newdf)
-        print('=====================================')
+        print('1=====================================')
         print(self.model.fittedvalues.tail())
-        print(newdf.head())
+        print(self.model.fittedvalues.shape)
         print(newdf.tail())
         print(optimization)
+        print('2=====================================')
 
         try:
             if not optimization:
@@ -132,10 +134,14 @@ class SARIMA:
                     latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
                     latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
                     latest_obs = latest_obs.asfreq(self.freq)
+
                     if in_dp:
                         newdf = newdf[0:1]
                     joined = pd.concat([latest_obs, newdf])
                     joined = joined.asfreq(self.freq)
+                    print('3~~~~~~~~')
+                    print(joined)
+                    print(joined.shape)
                     self.model = self.model.apply(joined, refit=False)
                 else:
                     if in_dp:
@@ -155,8 +161,10 @@ class SARIMA:
                 newdf = newdf.asfreq(self.freq)
                 self.model = self.model.append(newdf.astype(float))
 
+        print(1)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
+        print(2)
 
         if not in_dp:
             self.full_pred.append(pred)
@@ -169,6 +177,8 @@ class SARIMA:
                                                        dynamic=False, alpha=0.01)
 
             self.full_pred.append(pred_point)
+
+        print(3)
         pred_ci = pred.conf_int()
         deanomalized_window = pd.DataFrame([])
 
@@ -190,6 +200,7 @@ class SARIMA:
 
             deanomalized_window.loc[idx, 'value'] = value
 
+        print(4)
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
 
         return y_pred
@@ -322,6 +333,7 @@ class ExpSmoothing:
                 else:
                     y_pred.append(1)
             except Exception as e:
+                print('errrrroorrrrrr')
                 print(idx)
                 print(simulations.shape)
                 print(newdf.shape)
@@ -330,9 +342,12 @@ class ExpSmoothing:
         return y_pred
 
     def plot(self, y, dataset, datatype, filename, full_test_data_, drift_windows):
-        full_test_data = self._get_time_index(full_test_data_)
-        ax = full_test_data['value'].plot(label='observed')
+        # full_test_data = self._get_time_index(full_test_data_)
+        # ax = full_test_data['value'].plot(label='observed')
+        print('ploooooOot')
         print(self.full_pred)
+        #TODO NO PLOT
+        return
 
         for w, fpred in enumerate(self.full_pred):
             ax.fill_between(fpred.index,
