@@ -93,8 +93,8 @@ def entropy_modelling():
                                         entropies_no_anomalies.append(collected_entropies[-1])
 
                             entropies = copy.deepcopy(collected_entropies)
-                            mean_entropy = np.mean(entropies_no_anomalies)
-                            std_entropy = np.std(entropies_no_anomalies)
+                            mean_entropy = np.mean(collected_entropies)
+                            std_entropy = np.std(collected_entropies)
                             boundary_bottom = mean_entropy - std_entropy
                             boundary_up = mean_entropy + std_entropy
 

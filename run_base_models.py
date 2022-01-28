@@ -53,6 +53,7 @@ class Stopper(EarlyStopper):
 def fit_base_model(model_params, for_optimization=True):
     global data_in_memory_sz, can_model
     percent_anomaly = 0.95
+    is_normal_entropy = True
     # 50% train-test split
     if dataset == 'kpi':
         data_train = data
@@ -222,7 +223,6 @@ def fit_base_model(model_params, for_optimization=True):
 
     batch_metrices = []
     batched_f1 = []
-    batch_properties = []
     all_labels = []
     y_pred_total = []
     batches_with_anomalies = []
@@ -260,9 +260,9 @@ def fit_base_model(model_params, for_optimization=True):
                 # then apply anomaly detectors #########################################################################
                 if name in ['sarima']:
                     if for_optimization:
-                        y_pred = model.predict(window[['timestamp', 'value']], optimization=True)
+                        y_pred, is_normal_entropy = model.predict(window[['timestamp', 'value']], optimization=True)
                     else:
-                        y_pred = model.predict(window[['timestamp', 'value']])
+                        y_pred, is_normal_entropy = model.predict(window[['timestamp', 'value']])
 
                 elif name == 'es':
                     y_pred = model.predict(window[['timestamp', 'value']], anomaly_window)
@@ -404,10 +404,8 @@ def fit_base_model(model_params, for_optimization=True):
                 if window['is_anomaly'].tolist().count(1) > 0:
                     batches_with_anomalies.append(start // step)
 
-                res = catch22_all(window['value'].tolist())
-                batch_properties.append(res)
-
-                if y_pred.count(1) > 0:
+                # integrate entropy model into anomaly identification
+                if y_pred.count(1) > 2: # and not is_normal_entropy:
                     batches_predicted.append(1)
                 else:
                     batches_predicted.append(0)
@@ -471,27 +469,10 @@ def fit_base_model(model_params, for_optimization=True):
         except Exception as e:
             raise e
 
-    if batch_properties:
-        try:
-            df = pd.read_csv(f'results/ts_properties/per_ts/{dataset}_{type}_{filename}.csv')
-        except:
-            df = pd.DataFrame([])
+    # if not for_optimization:
+    #     plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows)
 
-            idx = 1
-            for batch in batch_properties:
-                dict_properties = {}
-                for n, val in zip(batch['names'], batch['values']):
-                    dict_properties[n] = val
-
-                dict_properties['batch'] = idx
-                idx += 1
-                df = df.append(dict_properties, ignore_index=True)
-
-            df.to_csv(f'results/ts_properties/per_ts/{dataset}_{type}_{filename}.csv')
-
-    if not for_optimization:
-        plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows)
-
+    print('saving results')
     if not test_drifts:
         met_total = precision_recall_fscore_support(data_test['is_anomaly'], y_pred_total, average='binary')
 
@@ -504,9 +485,14 @@ def fit_base_model(model_params, for_optimization=True):
 
         if not for_optimization:
             try:
-                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_per_batch.csv')
+                stats = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_per_batch_2threshold.csv')
             except:
                 stats = pd.DataFrame([])
+
+            try:
+                btn, bfp, bfn, btp = confusion_matrix(batches_real, batches_predicted).ravel()
+            except:
+                btn, bfp, bfn, btp = None, None, None, None
 
             stats = stats.append({
                 # 'model': name,
@@ -531,11 +517,20 @@ def fit_base_model(model_params, for_optimization=True):
                 'f1': f1_score(batches_real, batches_predicted, average='binary'),
                 'hamming': hamming_loss(batches_real, batches_predicted),
                 'step': 100,
+                'fp': bfp,
+                'fn': bfn,
+                'tp': btp,
+                'tn': btn,
+                'per_item_f1': met_total[2],
+                'per_item_fp': fp,
+                'per_item_fn': fn,
+                'per_item_tp': tp,
+                'per_item_tn': tn,
                 'model': name,
                 'total_anomalies': batches_real.count(1)
             }, ignore_index=True)
-            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_per_batch.csv', index=False)
-            plot_change(batch_metrices, batches_with_anomalies, name, filename.replace('.csv', ''), dataset)
+            stats.to_csv(f'results/{dataset}_{type}_stats_{name}_per_batch_2threshold.csv', index=False)
+            # plot_change(batch_metrices, batches_with_anomalies, name, filename.replace('.csv', ''), dataset)
         # return specificity if no anomalies, else return f1 score
         if data_test['is_anomaly'].tolist().count(1) == 0:
             return 1.0 - specificity
@@ -565,9 +560,8 @@ def fit_base_model(model_params, for_optimization=True):
 
 
 if __name__ == '__main__':
-    # performance()
-    entropy_modelling()
-    quit()
+    # entropy_modelling()
+    # quit()
     if test_drifts:
         learners_to_loop = drift_detectors
     else:
@@ -578,6 +572,7 @@ if __name__ == '__main__':
     except:
         hp = pd.DataFrame([])
 
+    continuer = True
     for dataset, type in [('kpi', 'train')]:
                           # ('kpi', 'train'), ('kpi', 'test')]:
                           # ('yahoo', 'real'),
@@ -592,12 +587,15 @@ if __name__ == '__main__':
             # else:
             #     train_data_path = root_path + '/datasets/' + dataset + '/nab_drift/' + type + '/'
             try:
-                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_per_batch.csv')
+                statf = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_per_batch_2threshold.csv')
             except:
                 statf = pd.DataFrame([])
 
             for filename in os.listdir(train_data_path):
                 print(filename)
+                # if '43115f2a' in filename or '43115f2a' in filename and '9c639a46' not in filename: # and continuer:
+                #     # continuer = False
+                #     continue
                 f = os.path.join(train_data_path, filename)
                 res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
                 # machine_data_path = f'datasets/machine_metrics/relevant/'
@@ -612,7 +610,9 @@ if __name__ == '__main__':
                     print(f"Training model {name} with data {filename}")
 
                     if dataset == 'kpi':
+                        import matplotlib.pyplot as plt
                         data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/test/', filename))
+                        data = data[-3000:]
 
                     if dataset != 'kpi' and np.array_split(copy.deepcopy(data), 2)[-1]['is_anomaly'].tolist().count(1) == 0:
                         continue
@@ -620,6 +620,13 @@ if __name__ == '__main__':
                         continue
 
                     can_model = True
+                    # try:
+                    #     fit_base_model(def_params, for_optimization=False)
+                    # except Exception as e:
+                    #     raise e
+
+                    # continue
+                    # teams anomaly detection file
 
                     try:
                         if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
@@ -648,14 +655,13 @@ if __name__ == '__main__':
                             else:
                                 bo_result = mock.Mock()
                                 bo_result.x = ast.literal_eval(hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)]['hp'].tolist()[0])
-                                if name == 'sarima' and dataset == 'NAB':
-                                    continue
 
                             if can_model:
                                 fit_base_model(bo_result.x, for_optimization=False)
                         else:
                             fit_base_model(def_params, for_optimization=False)
                     except Exception as e:
+                        raise e
                         print('Error:', e)
                         # try:
                         #     fit_base_model(def_params, for_optimization=False)

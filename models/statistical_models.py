@@ -16,6 +16,7 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import pandas as pd
 import matplotlib.pyplot as plt
+import antropy as ant
 from tslearn.metrics import dtw
 
 from analysis.preanalysis import periodicity_analysis
@@ -36,8 +37,8 @@ class SARIMA:
         self.threshold_modelling = False
         self.train_size = train_size
         self.latest_train_snippest = pd.DataFrame([])
-        self.result_memory_size = 1000
-        self.memory_threshold = 1000
+        self.result_memory_size = 500
+        self.memory_threshold = 500
         self.freq = None
 
     def _check_freq(self, idx):
@@ -116,16 +117,40 @@ class SARIMA:
         self.model = self.model.fit()
         # print(self.model.summary())
         self.latest_train_snippest = data
+        self.form_entropy(data)
+
+    def form_entropy(self, data):
+        collected_entropies = []
+        entropy_differences = []
+        entropies_no_anomalies = []
+
+        for start in range(0, data.shape[0], 100):
+            window = data.iloc[start:start + 100]
+
+            try:
+                collected_entropies.append(
+                    ant.svd_entropy(window['value'].to_numpy(), normalize=True))
+            except Exception as e:
+                pass
+
+            # if len(collected_entropies) > 1:
+            #     entropy_differences.append(
+            #         abs(collected_entropies[-1] - collected_entropies[-2]))
+
+            # if window['is_anomaly'].tolist().count(1) == 0:
+            #     entropies_no_anomalies.append(collected_entropies[-1])
+
+        self.entropy_boundary_bottom = np.mean(collected_entropies) - np.std(collected_entropies)
+        self.entropy_boundary_up = np.mean(collected_entropies) + np.std(collected_entropies)
 
     def predict(self, newdf, optimization=False, in_dp=False):
         y_pred = []
         newdf = self._get_time_index(newdf)
-        print('1=====================================')
+        print('=====================================')
         print(self.model.fittedvalues.tail())
         print(self.model.fittedvalues.shape)
         print(newdf.tail())
         print(optimization)
-        print('2=====================================')
 
         try:
             if not optimization:
@@ -139,14 +164,19 @@ class SARIMA:
                         newdf = newdf[0:1]
                     joined = pd.concat([latest_obs, newdf])
                     joined = joined.asfreq(self.freq)
-                    print('3~~~~~~~~')
+                    print('1~~~~~~~~')
                     print(joined)
                     print(joined.shape)
                     self.model = self.model.apply(joined, refit=False)
                 else:
                     if in_dp:
                         newdf = newdf[0:1]
+                    print('2==============')
+                    print(newdf)
+                    print(newdf.shape)
                     self.model = self.model.append(newdf)
+                    # self.model = self.model.apply(newdf, refit=False)
+
         except ValueError as e:
             if not optimization:
                 stuffed_value = pd.DataFrame([])
@@ -159,14 +189,21 @@ class SARIMA:
                 if in_dp:
                     newdf = newdf[0:1]
                 newdf = newdf.asfreq(self.freq)
+                print('3==============')
+                print(newdf)
+                print(newdf.shape)
                 self.model = self.model.append(newdf.astype(float))
 
-        print(1)
+        print('4==============')
+        print(newdf)
+        print(newdf.shape)
+        print(self.model.fittedvalues.shape)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
-        print(2)
 
         if not in_dp:
+            print('not in dp')
+            print(pred)
             self.full_pred.append(pred)
         else:
             try:
@@ -178,12 +215,13 @@ class SARIMA:
 
             self.full_pred.append(pred_point)
 
-        print(3)
         pred_ci = pred.conf_int()
         deanomalized_window = pd.DataFrame([])
 
         anomalies_count = 0
         anomaly_idxs = []
+
+        print('calculating anomalies')
 
         for idx, row in pred_ci.iterrows():
             value = None
@@ -200,10 +238,17 @@ class SARIMA:
 
             deanomalized_window.loc[idx, 'value'] = value
 
-        print(4)
         self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
 
-        return y_pred
+        try:
+            current_entropy = ant.svd_entropy(newdf['value'].to_numpy(), normalize=True)
+            entropy_identifier = self.entropy_boundary_bottom <= current_entropy <= self.entropy_boundary_up
+        except:
+            entropy_identifier = True
+
+        print('round done')
+
+        return y_pred, entropy_identifier
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -246,6 +291,7 @@ class SARIMA:
         self.full_pred = []
 
     def plot(self, y, dataset, datatype, filename, full_test_data, drift_windows):
+        print('plotting....')
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
         y = y.dropna(subset=['value'])
@@ -333,21 +379,13 @@ class ExpSmoothing:
                 else:
                     y_pred.append(1)
             except Exception as e:
-                print('errrrroorrrrrr')
-                print(idx)
-                print(simulations.shape)
-                print(newdf.shape)
                 raise e
 
         return y_pred
 
     def plot(self, y, dataset, datatype, filename, full_test_data_, drift_windows):
-        # full_test_data = self._get_time_index(full_test_data_)
-        # ax = full_test_data['value'].plot(label='observed')
-        print('ploooooOot')
-        print(self.full_pred)
-        #TODO NO PLOT
-        return
+        full_test_data = self._get_time_index(full_test_data_)
+        ax = full_test_data['value'].plot(label='observed')
 
         for w, fpred in enumerate(self.full_pred):
             ax.fill_between(fpred.index,
