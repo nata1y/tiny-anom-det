@@ -546,11 +546,11 @@ def analyze_anomalies(root_path):
 
 
 def avg_batch_f1():
-    for dataset, subsets in [('NAB', ['relevant']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
+    for dataset, subsets in [('NAB', ['relevant'])]:
         for tss in subsets:
-                total = 0
-                avg_f1_before, avg_f1_after = 0.0, 0.0
-                for model in ['sarima']:
+                for model in ['sarima', 'sr', 'lstm']:
+                    total = 0
+                    avg_f1_before, avg_f1_after = 0.0, 0.0
                     try:
                         path = 'results/' + dataset + '_' + tss + '_stats_' + model + '_batched.csv'
                         df = pd.read_csv(path)
@@ -562,19 +562,19 @@ def avg_batch_f1():
                                 continue
                             a1, al = a[0], a[-1]
                             try:
-                                if not pd.isna(np.mean(l[:a1])) and not pd.isna(np.mean(l[a1 + 1:])):
+                                if not pd.isna(np.mean(l[:a1])) and not pd.isna(np.mean(l[al + 1:])):
                                     avg_f1_before += np.mean(l[:a1])
-                                    avg_f1_after += np.mean(l[a1 + 1:])
+                                    avg_f1_after += np.mean(l[al + 1:])
                                     total += 1
                                     # print(pd.isna(np.mean(l[:a1])), np.mean(l[:a1]))
                             except Exception as e:
                                 pass
 
                     except Exception as e:
-                        pass
+                        raise e
 
-                if total > 0:
-                    avg_f1_before /= total
-                    avg_f1_after /= total
-                    print(f'Benchmerk {dataset} with dataset {tss} has difference in abg f1 scores '
-                          f'{avg_f1_after - avg_f1_before} for {model}')
+                    if total > 0:
+                        avg_f1_before /= total
+                        avg_f1_after /= total
+                        print(f'Benchmerk {dataset} with dataset {tss} has difference in avg f1 scores '
+                              f'{avg_f1_after - avg_f1_before} for {model}')
