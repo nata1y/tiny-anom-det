@@ -578,3 +578,23 @@ def avg_batch_f1():
                         avg_f1_after /= total
                         print(f'Benchmerk {dataset} with dataset {tss} has difference in avg f1 scores '
                               f'{avg_f1_after - avg_f1_before} for {model}')
+
+
+def loss_behavior():
+    df = pd.read_csv('C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images/kpi_train_stats_IDPSO_ELM_B_losses.csv')
+    print(df.columns)
+    for idx, row in df.iterrows():
+        losses = ast.literal_eval(row['losses'])
+        helper = pd.DataFrame([])
+        helper['Prediction loss'] = losses
+        helper['MA'] = helper.rolling(window=100).mean()
+        plt.plot(range(len(losses)), losses, marker='o', label='Prediction Loss')
+        plt.plot(range(len(losses)), helper['MA'].tolist(), marker='*', color='red', label='Rolling mean')
+
+        plt.xlabel('Time')
+        plt.ylabel('Prediction Loss')
+        plt.legend()
+        plt.savefig(f'results/imgs/change_performance/kpi/pso-elm_{row["dataset"]}.png')
+        plt.clf()
+
+        print(np.mean(helper['MA'].to_numpy()[-100:]) - np.mean(helper['MA'].to_numpy()[100:200]))
