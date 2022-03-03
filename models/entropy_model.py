@@ -14,28 +14,28 @@ from sklearn.metrics import f1_score, hamming_loss, confusion_matrix
 def entropy_modelling():
     q = np.arange(0.01, 100, 0.01).tolist()
     interval = 100
-    f1_scores = pd.read_csv(f'results/ts_properties/entropies/entropy_vs_window_w_factor_non_nan.csv')
-    f1_scores = f1_scores[f1_scores['dataset'] == 'NAB']
-    # f1_scores['factor'] = f1_scores['factor'].apply(lambda x: round(x, 1))
-    # f1_scores.drop_duplicates(inplace=True, subset=['factor', 'dataset', 'window'], keep='last')
-    x = sorted(f1_scores['window'].unique())
-    y = sorted(f1_scores['factor'].unique())
-    z = f1_scores['f1-score'].to_numpy()
-
-    # Z = []
-    # for wdw in sorted(f1_scores['window'].unique().tolist()):
-    #     if wdw > 5:
-    #         Z.append(f1_scores[f1_scores['window'] == wdw].sort_values(by='factor', ascending=True)['f1-score'].tolist())
+    # f1_scores = pd.read_csv(f'results/ts_properties/entropies/entropy_vs_window_w_factor_non_nan.csv')
+    # f1_scores = f1_scores[f1_scores['dataset'] == 'NAB']
+    # # f1_scores['factor'] = f1_scores['factor'].apply(lambda x: round(x, 1))
+    # # f1_scores.drop_duplicates(inplace=True, subset=['factor', 'dataset', 'window'], keep='last')
+    # x = sorted(f1_scores['window'].unique())
+    # y = sorted(f1_scores['factor'].unique())
+    # z = f1_scores['f1-score'].to_numpy()
     #
-    # plt.imshow(np.array(Z), cmap=plt.cm.magma, interpolation='bilinear', origin="lower")
-    plt.scatter(f1_scores['window'].tolist(), f1_scores['factor'].tolist(), c=z, cmap=plt.cm.magma)
-    plt.xlabel('Window')
-    plt.xticks(x)
-    plt.yticks(y)
-    plt.ylabel('Factor')
-    plt.colorbar()
-    plt.savefig(f'results/ts_properties/imgs/entropy_analysis/entropy_colormap_NAB.png')
-    quit()
+    # # Z = []
+    # # for wdw in sorted(f1_scores['window'].unique().tolist()):
+    # #     if wdw > 5:
+    # #         Z.append(f1_scores[f1_scores['window'] == wdw].sort_values(by='factor', ascending=True)['f1-score'].tolist())
+    # #
+    # # plt.imshow(np.array(Z), cmap=plt.cm.magma, interpolation='bilinear', origin="lower")
+    # plt.scatter(f1_scores['window'].tolist(), f1_scores['factor'].tolist(), c=z, cmap=plt.cm.magma)
+    # plt.xlabel('Window')
+    # plt.xticks(x)
+    # plt.yticks(y)
+    # plt.ylabel('Factor')
+    # plt.colorbar()
+    # plt.savefig(f'results/ts_properties/imgs/entropy_analysis/entropy_colormap_NAB.png')
+    # quit()
     entropies_no_anomalies = []
     f1_scores = pd.DataFrame([])
     # step = 100
@@ -48,7 +48,7 @@ def entropy_modelling():
             for factor in np.arange(0.5, 4.1, 0.1):
                 factor = round(factor, 1)
                 print(f'Doing entropy {wdw}, {factor}')
-                for dataset, subsets in [('kpi', ['train']), ('NAB', ['relevant'])]:
+                for dataset, subsets in [('NAB', ['windows'])]:
                     # print(f1_scores[(f1_scores['factor'] == factor) & (f1_scores['window'] == wdw) & (f1_scores['dataset'] == dataset)])
                     # if not f1_scores[(f1_scores['factor'] == factor) & (f1_scores['window'] == wdw) & (f1_scores['dataset'] == dataset)].empty:
                     #     continue
@@ -275,5 +275,5 @@ def entropy_modelling():
                             'dataset': dataset,
                             'factor': factor
                         }, ignore_index=True)
-                        f1_scores.to_csv(f'results/ts_properties/entropies/entropy_vs_window_w_factor_non_nan.csv')
+                        f1_scores.to_csv(f'results/ts_properties/entropies/entropy_vs_window_w_factor_window_nab.csv')
                 # hcs.to_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv')

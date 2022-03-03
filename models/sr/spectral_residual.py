@@ -26,6 +26,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 import pandas as pd
 import numpy as np
+import antropy as ant
 
 from models.sr.msanomalydetector.util import *
 import models.sr.msanomalydetector.boundary_utils as boundary_helper
@@ -35,7 +36,7 @@ import plotly.graph_objects as go
 
 
 class SpectralResidual:
-    def __init__(self, series, threshold, mag_window, score_window, sensitivity, detect_mode, batch_size=32, dt=False):
+    def __init__(self, series, threshold, mag_window, score_window, sensitivity, detect_mode, batch_size=32, dt=True):
         self.__series__ = series
         self.__values__ = self.__series__['value'].tolist()
         # hyperparam tau = thershold?, tau = 3
@@ -55,33 +56,55 @@ class SpectralResidual:
         self.__batch_size = max(12, self.__batch_size)
         self.__batch_size = min(len(series), self.__batch_size)
         self.history = pd.DataFrame([])
-        self.dynamic_threshold = dt
+        self.dynamic_threshold = True
         self.threshold_model = SARIMA(1.3)
 
     def fit(self):
+        self.svd_entropies = []
         if self.__anomaly_frame is None:
             self.__anomaly_frame = self.__detect()
 
+        for start in range(0, len(self.__anomaly_frame), 60):
+                try:
+                    self.svd_entropies.append(
+                        ant.svd_entropy(self.__anomaly_frame[start:start + 60]['value'].tolist(),
+                                        normalize=True))
+                except:
+                    pass
+        self.boundary_bottom = np.mean([v for v in self.svd_entropies if pd.notna(v)]) - \
+                          2.5 * np.std([v for v in self.svd_entropies if pd.notna(v)])
+        self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
+                      2.5 * np.std([v for v in self.svd_entropies if pd.notna(v)])
+
+        print(self.boundary_up, self.boundary_bottom)
+
         result = self.__anomaly_frame
 
-        self.threshold_model.dataset = 'kpi'
-        self.threshold_model.threshold_modelling = True
+        # self.threshold_model.dataset = 'kpi'
+        # self.threshold_model.threshold_modelling = True
 
-        result['value'] = result['score']
-        self.threshold_model.fit(result[['timestamp', 'value']], 'kpi')
+        # result['value'] = result['score']
+        # self.threshold_model.fit(result[['timestamp', 'value']], 'kpi')
         return result
 
     def detect_dynamic_threshold(self, window_step):
         self.__anomaly_frame = self.__detect()
+        try:
+            entropy = ant.svd_entropy(window_step['value'].tolist(), normalize=True)
+        except:
+            return [0 for _ in range(window_step.shape[0])]
 
         result = self.__anomaly_frame
 
-        self.threshold_model.threshold_modelling = True
+        # self.threshold_model.threshold_modelling = True
 
-        result['value'] = result['score']
-        self.threshold_model.predict(result[['timestamp', 'value']])
-        self.history = pd.concat([self.history, self.__anomaly_frame[-window_step:]])
-        return result
+        if entropy < self.boundary_bottom or entropy > self.boundary_up:
+            result['isAnomaly_e'] = [1 for _ in range(result.shape[0])]
+        else:
+            result['isAnomaly_e'] = result['isAnomaly']
+        # self.threshold_model.predict(result[['timestamp', 'value']])
+        # self.history = pd.concat([self.history, self.__anomaly_frame[-window_step:]])
+        return result[-60:]
 
     def plot_dynamic_threshold(self, timestamps, dataset, datatype, filename, data_test):
         loss_df = pd.DataFrame([])

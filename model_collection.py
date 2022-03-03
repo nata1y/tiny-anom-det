@@ -37,15 +37,16 @@ models = {
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
           # 'orion': (Orion(), [], []),
-          # 'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
-          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
-          #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
-          #                           Integer(low=1, high=100, name='sensitivity')],
-          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-          # 'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
+            'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
+                                      Integer(low=1, high=30, name='MAG_WINDOW'),
+                                      Integer(low=5, high=1000, name='SCORE_WINDOW'),
+                                      Integer(low=1, high=100, name='sensitivity')],
+                   [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+            'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
-          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-                     [1.2, 1.2]),
+          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+          #            [1.2, 1.2]),
+          # 'prophet': (Prophet, [], []),
           # 'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
           # 'dp': (DriftPointModel, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton"),
           #                          Real(low=0.00001, high=0.9, name="delta")], [1.2, 1.2, 0.002]),
@@ -80,6 +81,17 @@ drift_detectors = {
     'ph': (PageHinkley, [Real(low=0.00001, high=0.9, name="delta"), Integer(low=1, high=1000, name='threshold')],
            [0.005, 50])
 }
+
+
+kpi_ts_same_granularity = [
+    '0efb375b-b902-3661-ab23-9a0bb799f4e3',
+    '301c70d8-1630-35ac-8f96-bc1b6f4359ea',
+    '54350a12-7a9d-3ca8-b81f-f886b9d156fd',
+    'a8c06b47-cc41-3738-9110-12df0ee4c721',
+    'ab216663-dcc2-3a24-b1ee-2c3e550e06c9',
+    'c02607e8-7399-3dde-9d28-8a8da5e5d251',
+    'e0747cad-8dc8-38a9-a9ab-855b61f5551d'
+]
 
 
 anomaly_taxonomy = {

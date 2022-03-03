@@ -11,6 +11,7 @@ from sklearn.cluster import DBSCAN
 from tensorflow import keras
 from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDistributed
 from tensorflow.keras.models import Sequential
+import antropy as ant
 
 # print(f'Torch cuda is avaliable {torch.cuda.is_available()}')
 from models.sr.spectral_residual import SpectralResidual, MAG_WINDOW, SCORE_WINDOW, THRESHOLD
@@ -94,34 +95,21 @@ class LSTM_autoencoder:
         self.threshold = self.magnitude * st.t.interval(alpha=0.99, df=len(self.history.history['loss'])-1,
                                                         loc=np.mean(self.history.history['loss']),
                                                         scale=st.sem(self.history.history['loss']))[1]
+        # self.threshold = np.percentile(self.history.history['loss'], 90)
 
-        if self.threshold_model_type == 'sarima':
-            self.threshold_model = SARIMA(1.3)
-            self.threshold_model.dataset = self.dataset
-            self.threshold_model.threshold_modelling = True
-            threshold_train_data = pd.DataFrame([])
-            prediction_full = self.model.predict(X_train)
-            loss = np.abs(X_train - prediction_full).ravel()
-            loss = [loss[idx * self.window] for idx in range(X_train.shape[0])]
+        self.svd_entropies = []
 
-            mean_val = np.mean(Xf.tolist())
-            Xf = funcy.lflatten(Xf.tolist())
-            for idx in range(self.window - len(Xf)):
-                Xf.append(mean_val)
-            Xf = np.array(Xf).reshape((1, self.window, 1))
-            prediction = self.model.predict(Xf)
-            loss += np.abs(Xf - prediction).ravel().tolist()
-
-            threshold_train_data['value'] = loss[-2000:]
-            threshold_train_data['timestamp'] = timestamp.tolist()[-2000:]
-            # model = SpectralResidual(series=threshold_train_data[['value', 'timestamp']], threshold=THRESHOLD,
-            #                          mag_window=MAG_WINDOW, score_window=SCORE_WINDOW,
-            #                          sensitivity=99, detect_mode=DetectMode.anomaly_only)
-            # loss = model.detect()['score'].tolist()
-            # threshold_train_data['value'] = loss
-            self.threshold_model.fit(threshold_train_data, self.dataset)
-        elif self.threshold_model_type == 'dbscan':
-            self.threshold_model = DBSCAN(eps=1, min_samples=2, metric='euclidean')
+        for start in range(0, len(Xf), 60):
+            try:
+                self.svd_entropies.append(
+                    ant.svd_entropy(Xf[start:start + 60], normalize=True))
+            except:
+                pass
+        self.boundary_bottom = np.mean([v for v in self.svd_entropies if pd.notna(v)]) - \
+                               2.5 * np.std([v for v in self.svd_entropies if pd.notna(v)])
+        self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
+                           2.5 * np.std([v for v in self.svd_entropies if pd.notna(v)])
+        print(self.boundary_up, self.boundary_bottom)
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -140,40 +128,20 @@ class LSTM_autoencoder:
         for idx in range(self.window - X.shape[1]):
             Xf.append(mean_val)
 
+        entropy = ant.svd_entropy(Xf, normalize=True)
+        print(entropy)
+
         Xf = np.array(Xf).reshape((1, self.window, 1))
         prediction = self.model.predict(Xf)
         loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
 
-        threshold_test_data = pd.DataFrame([])
-        threshold_test_data['value'] = loss.flatten().tolist()
-        threshold_test_data['timestamp'] = timestamp.tolist()
-
-        # model = SpectralResidual(series=threshold_test_data[['value', 'timestamp']], threshold=THRESHOLD,
-        #                          mag_window=MAG_WINDOW, score_window=SCORE_WINDOW,
-        #                          sensitivity=99, detect_mode=DetectMode.anomaly_only)
-        # loss = model.detect()['score'].tolist()
-        # threshold_test_data['value'] = loss
-
-        if not self.threshold_model_type:
-            y_pred = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
-        elif self.threshold_model_type == 'sarima':
-            y_pred = self.threshold_model.predict(threshold_test_data)
-        elif self.threshold_model_type == 'dbscan':
-            y_pred = self.threshold_model.fit_predict(threshold_test_data[['value']])
-        elif self.threshold_model_type == 'sr':
-            # apply spectral residuals
-            model = SpectralResidual(series=threshold_test_data[['value', 'timestamp']], threshold=THRESHOLD,
-                                     mag_window=MAG_WINDOW, score_window=SCORE_WINDOW,
-                                     sensitivity=99, detect_mode=DetectMode.anomaly_only)
-            loss = model.detect()['score'].tolist()
-            threshold_test_data['value'] = loss
-            try:
-                y_pred = [1 if x else 0 for x in model.detect()['isAnomaly'].tolist()]
-            except:
-                y_pred = [0 for _ in range(threshold_test_data.shape[0])]
-
+        y_pred1 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
+        if self.boundary_bottom <= entropy <= self.boundary_up:
+            y_pred2 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
+        else:
+            y_pred2 = [1 for _ in range(len(loss))]
         self.loss += loss.flatten().tolist()
-        return y_pred
+        return y_pred1, y_pred2
 
     def plot(self, timestamps, dataset, datatype, filename, data_test, drifts):
         loss_df = pd.DataFrame([])

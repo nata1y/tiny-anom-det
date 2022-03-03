@@ -8,6 +8,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow
 from catch22 import catch22_all
+from scipy.stats import ks_2samp
+from sklearn.metrics import make_scorer
 from skopt.callbacks import EarlyStopper
 
 from analysis.postanalysis import confusion_visualization
@@ -120,38 +122,38 @@ def handle_missing_values_kpi(data, start=None):
 
 
 def preprocess_nab_labels(root_path):
-    with open(root_path + '/datasets/NAB/labels/combined_labels.json') as json_file:
-        labels = json.load(json_file)
+    # with open(root_path + '/datasets/NAB/labels/combined_labels.json') as json_file:
+    #     labels = json.load(json_file)
 
-    # with open(root_path + '/datasets/NAB/labels/combined_windows.json') as json_file:
-    #     labels_window = json.load(json_file)
+    with open(root_path + '/datasets/NAB/labels/combined_windows.json') as json_file:
+        labels_window = json.load(json_file)
 
     # with open(root_path + '/datasets/NAB/labels/combined_windows_tiny.json') as json_file:
     #     labels_window_tiny = json.load(json_file)
-    for attribute, value in labels.items():
-        try:
-            dataset = pd.read_csv('C:\\Users\\oxifl\\Documents\\uni\\NAB\\data\\' + attribute)
-            dataset['is_anomaly'] = 0
-            dataset.set_index('timestamp', inplace=True)
-            for a_idx in value:
-                dataset.loc[a_idx, 'is_anomaly'] = 1.0
-
-            dataset.to_csv(root_path + '\\datasets\\NAB\\relevant\\' + attribute.split('/')[-1])
-        except Exception as e:
-            print(e)
-
-    # for attribute, values in labels_window.items():
+    # for attribute, value in labels.items():
     #     try:
-    #         dataset = pd.read_csv(root_path + '/datasets/NAB/relevant/' + attribute.split('/')[-1])
+    #         dataset = pd.read_csv('C:\\Users\\oxifl\\Documents\\uni\\NAB\\data\\' + attribute)
+    #         dataset['is_anomaly'] = 0
     #         dataset.set_index('timestamp', inplace=True)
-    #         for value in values:
-    #             start, end = value[0], value[1]
-    #             bool_series = ((dataset.index >= start) & (dataset.index <= end))
-    #             dataset.loc[bool_series, 'is_anomaly'] = 1.0
+    #         for a_idx in value:
+    #             dataset.loc[a_idx, 'is_anomaly'] = 1.0
     #
-    #         dataset.to_csv(root_path + '/datasets/NAB/relevant/' + attribute.split('/')[-1])
-    #     except:
-    #         pass
+    #         dataset.to_csv(root_path + '\\datasets\\NAB\\relevant\\' + attribute.split('/')[-1])
+    #     except Exception as e:
+    #         print(e)
+
+    for attribute, values in labels_window.items():
+        try:
+            dataset = pd.read_csv(root_path + '/datasets/NAB/relevant/' + attribute.split('/')[-1])
+            dataset.set_index('timestamp', inplace=True)
+            for value in values:
+                start, end = value[0], value[1]
+                bool_series = ((dataset.index >= start) & (dataset.index <= end))
+                dataset.loc[bool_series, 'is_anomaly'] = 1.0
+
+            # dataset.to_csv(root_path + '/datasets/NAB/windows/' + attribute.split('/')[-1])
+        except:
+            pass
 
     # for attribute, values in labels_window_tiny.items():
     #     try:
@@ -304,18 +306,35 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
         print(e)
 
 
-def plot_change(score_array, anomaly_idxs, model, ts, dataset):
+def plot_change(score_array, anomaly_idxs, model, ts, dataset, score, mdl, data):
     helper = pd.DataFrame([])
     helper['value'] = score_array
-    helper['ma'] = helper.rolling(window=5).mean()
-    plt.plot(range(len(score_array)), score_array, marker='o', label='hamming distance')
-    plt.plot(range(len(score_array)), helper['ma'].tolist(), marker='*', color='red', label='Rolling mean')
-    for idx in anomaly_idxs:
-        plt.axvline(x=idx, color='orange', linestyle='--')
+    helper['ma'] = helper.rolling(window=60).mean()
+    # for k, v in data.items():
+    #     plt.plot(range(len(v)), v, marker='o', label=k)
+
+    # plt.plot(range(len(score_array)), helper['ma'].tolist(), marker='*', color='red', label='Rolling mean')
+    # for idx in anomaly_idxs:
+    #     plt.axvline(x=idx, color='orange', linestyle='--')
+    # plt.xlabel('Batch')
+    # plt.ylabel(score)
+    # plt.legend()
+    # plt.savefig(f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_stream/{model}_{mdl}_{ts}.png')
+    # plt.clf()
+
+    for k, v in data.items():
+        helper = pd.DataFrame([])
+        helper['value'] = v
+        helper['ma'] = helper.rolling(window=60).mean()
+        plt.plot(range(len(v)), helper['ma'].tolist(), marker='o', label=k + ' MA')
+
+    # plt.plot(range(len(score_array)), helper['ma'].tolist(), marker='*', color='red', label='Rolling mean')
+    # for idx in anomaly_idxs:
+    #     plt.axvline(x=idx, color='orange', linestyle='--')
     plt.xlabel('Batch')
-    plt.ylabel('Hamming Distance')
+    plt.ylabel(score + ' MA')
     plt.legend()
-    plt.savefig(f'results/imgs/change_performance/{dataset}/{model}_{ts}.png')
+    plt.savefig(f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_stream/{model}_{mdl}_{ts}_ma_turnoff.png')
     plt.clf()
 
 
@@ -546,55 +565,71 @@ def analyze_anomalies(root_path):
 
 
 def avg_batch_f1():
-    for dataset, subsets in [('NAB', ['relevant'])]:
+    for dataset, subsets in [('kpi', ['train'])]:
         for tss in subsets:
-                for model in ['sarima', 'sr', 'lstm']:
+                for model in ['']:
                     total = 0
                     avg_f1_before, avg_f1_after = 0.0, 0.0
                     try:
-                        path = 'results/' + dataset + '_' + tss + '_stats_' + model + '_batched.csv'
+                        path = 'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\kpi_train_stats_IDPSO_ELM_B_wdw_35_batched_risk_peaks.csv'
                         df = pd.read_csv(path)
                         # print(df.head())
-                        for idx, row in df.iterrows():
-                            l = ast.literal_eval(row['batch_metrics'])
-                            a = ast.literal_eval(row['anomaly_idxs'])
-                            if not a:
+                        for score in ['f1-score']:
+                            for idx, row in df.iterrows():
+                                # l = ast.literal_eval(row['batch_metrics'])
+                                # a = ast.literal_eval(row['anomaly_idxs'])
+                                res = {}
+                                #  '0.01-0.1-turnoff-entropy-20-abs', 'or_entropy-turnoff-entropy-20-abs'
+                                for mdl in ['0.01-0.1-turnoff-entropy-20-abs', 'or_entropy-turnoff-entropy-20-abs']:
+                                    res[mdl] = ast.literal_eval(row[score + '-' + mdl + '-batched'])
+                                l = ast.literal_eval(row[score + '-' + mdl + '-batched'])
+                                plot_change(l, [], 'IDPSO_ELM_B', row['dataset'], 'kpi', score, mdl, res)
                                 continue
-                            a1, al = a[0], a[-1]
-                            try:
-                                if not pd.isna(np.mean(l[:a1])) and not pd.isna(np.mean(l[al + 1:])):
-                                    avg_f1_before += np.mean(l[:a1])
-                                    avg_f1_after += np.mean(l[al + 1:])
-                                    total += 1
-                                    # print(pd.isna(np.mean(l[:a1])), np.mean(l[:a1]))
-                            except Exception as e:
-                                pass
+                                if not a:
+                                    continue
+                                a1, al = a[0], a[-1]
+                                try:
+                                    if not pd.isna(np.mean(l[:a1])) and not pd.isna(np.mean(l[al + 1:])):
+                                        avg_f1_before += np.mean(l[:a1])
+                                        avg_f1_after += np.mean(l[al + 1:])
+                                        total += 1
+                                        # print(pd.isna(np.mean(l[:a1])), np.mean(l[:a1]))
+                                except Exception as e:
+                                    pass
 
                     except Exception as e:
                         raise e
 
-                    if total > 0:
-                        avg_f1_before /= total
-                        avg_f1_after /= total
-                        print(f'Benchmerk {dataset} with dataset {tss} has difference in avg f1 scores '
-                              f'{avg_f1_after - avg_f1_before} for {model}')
+                    # if total > 0:
+                    #     avg_f1_before /= total
+                    #     avg_f1_after /= total
+                    #     print(f'Benchmerk {dataset} with dataset {tss} has difference in avg f1 scores '
+                    #           f'{avg_f1_after - avg_f1_before} for {model}')
 
 
 def loss_behavior():
-    df = pd.read_csv('C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images/kpi_train_stats_IDPSO_ELM_B_losses.csv')
+    df = pd.read_csv('C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images/kpi_train_stats_IDPSO_ELM_B_full4_batched.csv')
     print(df.columns)
     for idx, row in df.iterrows():
-        losses = ast.literal_eval(row['losses'])
-        helper = pd.DataFrame([])
-        helper['Prediction loss'] = losses
-        helper['MA'] = helper.rolling(window=100).mean()
-        plt.plot(range(len(losses)), losses, marker='o', label='Prediction Loss')
-        plt.plot(range(len(losses)), helper['MA'].tolist(), marker='*', color='red', label='Rolling mean')
+        for add, tp in [('', 'f1-batched-fixed-0.1'), ('or entropy', 'f1-batched-or_entropy-0.1'), ('dynamic_entropy', 'f1-batched-0.01-0.1')]:
+            losses = ast.literal_eval(row[tp])
+            helper = pd.DataFrame([])
+            helper['Prediction loss'] = losses
+            helper['MA'] = helper.rolling(window=100).mean()
+            # plt.plot(range(len(losses)), losses, marker='o', label='F1-score' + add)
+            plt.plot(range(len(losses)), helper['MA'].tolist(), marker='*', label='Rolling mean ' + add)
+
+            print(np.mean(helper['MA'].to_numpy()[-100:]) - np.mean(helper['MA'].to_numpy()[100:200]))
 
         plt.xlabel('Time')
-        plt.ylabel('Prediction Loss')
+        plt.ylabel('Monitoring metrics')
         plt.legend()
-        plt.savefig(f'results/imgs/change_performance/kpi/pso-elm_{row["dataset"]}.png')
+        plt.savefig(f'results/imgs/change_performance/kpi/idpso-elm-60_{row["dataset"]}.png')
         plt.clf()
 
-        print(np.mean(helper['MA'].to_numpy()[-100:]) - np.mean(helper['MA'].to_numpy()[100:200]))
+
+def ks_stat(y, yhat):
+    try:
+        return ks_2samp(yhat[y == 1], yhat[y != 1]).statistic
+    except:
+        return 1.0
