@@ -334,7 +334,7 @@ def plot_change(score_array, anomaly_idxs, model, ts, dataset, score, mdl, data)
     plt.xlabel('Batch')
     plt.ylabel(score + ' MA')
     plt.legend()
-    plt.savefig(f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_stream/{model}_{mdl}_{ts}_ma_turnoff.png')
+    plt.savefig(f'C:\\Users\\ET34TU\\Documents\\models\\idpso-elm-b-anomaly\\images\\{model}_{mdl}_{ts}_ma_joined.png')
     plt.clf()
 
 
@@ -544,7 +544,7 @@ def analyze_anomalies(root_path):
     type_one_anomalies = []
     for dataset, subsets in [('NAB', ['relevant']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
         for tss in subsets:
-            train_data_path = root_path + '/datasets/' + dataset + '/' + tss + '/'
+            train_data_path = 'C:\\Users\\ET34TU\\Documents\\models\\idpso-elm-b-anomaly\\images'
             for filename in os.listdir(train_data_path):
                 print(filename)
                 f = os.path.join(train_data_path, filename)
@@ -571,19 +571,24 @@ def avg_batch_f1():
                     total = 0
                     avg_f1_before, avg_f1_after = 0.0, 0.0
                     try:
-                        path = 'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\kpi_train_stats_IDPSO_ELM_B_wdw_35_batched_risk_peaks.csv'
-                        df = pd.read_csv(path)
-                        # print(df.head())
+                        path = 'C:\\Users\\ET34TU\\Documents\\models\\idpso-elm-b-anomaly\\images\\kpi_train_stats_IDPSO_ELM_B_wdw_35_batched_fixeddrift.csv'
+
+                        df_fixed = pd.read_csv(path)
+
+                        path = 'C:\\Users\\ET34TU\\Documents\\models\\idpso-elm-b-anomaly\\images\\kpi_train_stats_IDPSO_ELM_B_wdw_35_batched_nodrift.csv'
+
+                        df_no = pd.read_csv(path)
                         for score in ['f1-score']:
-                            for idx, row in df.iterrows():
+                            for ((idx_no, row_no),(idx_fixed, row_fixed)) in zip(df_no.iterrows(), df_fixed.iterrows()):
                                 # l = ast.literal_eval(row['batch_metrics'])
                                 # a = ast.literal_eval(row['anomaly_idxs'])
                                 res = {}
                                 #  '0.01-0.1-turnoff-entropy-20-abs', 'or_entropy-turnoff-entropy-20-abs'
-                                for mdl in ['0.01-0.1-turnoff-entropy-20-abs', 'or_entropy-turnoff-entropy-20-abs']:
-                                    res[mdl] = ast.literal_eval(row[score + '-' + mdl + '-batched'])
-                                l = ast.literal_eval(row[score + '-' + mdl + '-batched'])
-                                plot_change(l, [], 'IDPSO_ELM_B', row['dataset'], 'kpi', score, mdl, res)
+                                for mdl in ['or_entropy-0.1-abs', '0.01-0.1-abs', 'fixed-0.1-abs']:
+                                    res[mdl + '-nodrift'] = ast.literal_eval(row_no[score + '-' + mdl + '-batched'])
+                                    res[mdl + '-fixeddrift'] = ast.literal_eval(row_fixed[score + '-' + mdl + '-batched'])
+                                l = ast.literal_eval(row_no[score + '-' + mdl + '-batched'])
+                                plot_change(l, [], 'IDPSO_ELM_B', row_no['dataset'], 'kpi', score, mdl, res)
                                 continue
                                 if not a:
                                     continue
