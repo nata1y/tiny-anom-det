@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import scipy.stats as st
 import tensorflow as tf
 from keras.engine.input_layer import InputLayer
+from scipy import stats
 from sklearn.cluster import DBSCAN
 from tensorflow import keras
 from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDistributed
@@ -139,7 +140,11 @@ class LSTM_autoencoder:
         if self.boundary_bottom <= entropy <= self.boundary_up:
             y_pred2 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
         else:
-            y_pred2 = [1 for _ in range(len(loss))]
+            extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
+            extent = 1.5 - max(extent, 1.0 - extent)
+            threshold_adapted = self.threshold * extent
+            y_pred2 = [0 if loss[idx] <= threshold_adapted else 1 for idx in range(len(loss))]
+
         self.loss += loss.flatten().tolist()
         return y_pred1, y_pred2
 

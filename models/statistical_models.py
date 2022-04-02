@@ -8,6 +8,7 @@ from collections import Counter
 
 import funcy
 import numpy as np
+from scipy import stats
 from sklearn.cluster import DBSCAN
 from sklearn.metrics import mean_squared_log_error
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
@@ -20,6 +21,7 @@ import antropy as ant
 from tslearn.metrics import dtw
 
 from analysis.preanalysis import periodicity_analysis
+from settings import anomaly_window
 from utils import adjust_range
 import plotly.graph_objects as go
 
@@ -64,17 +66,24 @@ class SARIMA:
 
             return data
         if self.dataset in ['kpi']:
-            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
+            try:
+                data['timestamp'] = data['timestamp'].apply(lambda x:
+                                                            datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
+            except:
+                pass
+            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='T')
             data.set_index('timestamp', inplace=True)
             data = data[~data.index.duplicated(keep='first')]
-
             self.freq = self._check_freq(data.index)
             data = data.asfreq(self.freq)
             return data
 
     def fit(self, data, dataset):
+        self.form_entropy(data)
+        data = data[-5000:]
         period = 12
         # period = periodicity_analysis(data, self.dataset)
+        print(data)
 
         if dataset != 'retrain':
             self.dataset = dataset
@@ -111,21 +120,19 @@ class SARIMA:
 
                 except Exception as e:
                     print(e)
-                    print('error 222')
 
         # print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
         self.model = self.model.fit()
         # print(self.model.summary())
-        self.latest_train_snippest = data
-        self.form_entropy(data)
+        # self.latest_train_snippest = data
 
     def form_entropy(self, data):
         collected_entropies = []
         entropy_differences = []
         entropies_no_anomalies = []
 
-        for start in range(0, data.shape[0], 100):
-            window = data.iloc[start:start + 100]
+        for start in range(0, data.shape[0], anomaly_window):
+            window = data.iloc[start:start + anomaly_window]
 
             try:
                 collected_entropies.append(
@@ -140,17 +147,27 @@ class SARIMA:
             # if window['is_anomaly'].tolist().count(1) == 0:
             #     entropies_no_anomalies.append(collected_entropies[-1])
 
-        self.entropy_boundary_bottom = np.mean(collected_entropies) - np.std(collected_entropies)
-        self.entropy_boundary_up = np.mean(collected_entropies) + np.std(collected_entropies)
+        self.mean_entropy = np.mean([v for v in collected_entropies if pd.notna(v)])
+        self.collected_entropies = collected_entropies
+        self.entropy_boundary_bottom = self.mean_entropy - 2.5 * np.std([v for v in collected_entropies if pd.notna(v)])
+        self.entropy_boundary_up = self.mean_entropy + 2.5 * np.std([v for v in collected_entropies if pd.notna(v)])
 
     def predict(self, newdf, optimization=False, in_dp=False):
         y_pred = []
+        y_pred_e = []
         newdf = self._get_time_index(newdf)
-        print('=====================================')
-        print(self.model.fittedvalues.tail())
-        print(self.model.fittedvalues.shape)
-        print(newdf.tail())
-        print(optimization)
+
+        print(self.model.fittedvalues)
+        print(newdf)
+        try:
+            current_entropy = ant.svd_entropy(newdf['value'].to_numpy(), normalize=True)
+            entropy_identifier = self.entropy_boundary_bottom <= current_entropy <= self.entropy_boundary_up
+            extent = stats.percentileofscore(self.collected_entropies, current_entropy) / 100.0
+            extent = 1.5 - max(extent, 1.0 - extent)
+            conf_botton_e = adjust_range(self.conf_botton, 'div', extent)
+            conf_top_e = adjust_range(self.conf_top, 'mult', extent)
+        except:
+            entropy_identifier = True
 
         try:
             if not optimization:
@@ -164,16 +181,10 @@ class SARIMA:
                         newdf = newdf[0:1]
                     joined = pd.concat([latest_obs, newdf])
                     joined = joined.asfreq(self.freq)
-                    print('1~~~~~~~~')
-                    print(joined)
-                    print(joined.shape)
                     self.model = self.model.apply(joined, refit=False)
                 else:
                     if in_dp:
                         newdf = newdf[0:1]
-                    print('2==============')
-                    print(newdf)
-                    print(newdf.shape)
                     self.model = self.model.append(newdf)
                     # self.model = self.model.apply(newdf, refit=False)
 
@@ -189,22 +200,15 @@ class SARIMA:
                 if in_dp:
                     newdf = newdf[0:1]
                 newdf = newdf.asfreq(self.freq)
-                print('3==============')
-                print(newdf)
-                print(newdf.shape)
                 self.model = self.model.append(newdf.astype(float))
 
-        print('4==============')
-        print(newdf)
-        print(newdf.shape)
-        print(self.model.fittedvalues.shape)
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
         if not in_dp:
             print('not in dp')
             print(pred)
-            self.full_pred.append(pred)
+            #self.full_pred.append(pred)
         else:
             try:
                 pred_point = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.tolist()[1],
@@ -213,13 +217,10 @@ class SARIMA:
                 pred_point = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                                        dynamic=False, alpha=0.01)
 
-            self.full_pred.append(pred_point)
+            #self.full_pred.append(pred_point)
 
         pred_ci = pred.conf_int()
-        deanomalized_window = pd.DataFrame([])
-
-        anomalies_count = 0
-        anomaly_idxs = []
+        # deanomalized_window = pd.DataFrame([])
 
         print('calculating anomalies')
 
@@ -229,26 +230,25 @@ class SARIMA:
                 if adjust_range(row['lower value'], 'div', self.conf_botton) <= newdf.loc[idx, 'value'] \
                         <= adjust_range(row['upper value'], 'mult', self.conf_top):
                     y_pred.append(0)
-                    value = newdf.loc[idx, 'value']
+                    if entropy_identifier:
+                        y_pred_e.append(0)
                 else:
-                    anomalies_count += 1
-                    anomaly_idxs.append(idx)
                     y_pred.append(1)
-                    newdf.loc[idx, 'value'] = None
+                    if entropy_identifier:
+                        y_pred_e.append(1)
 
-            deanomalized_window.loc[idx, 'value'] = value
+                if not entropy_identifier:
+                    if adjust_range(row['lower value'], 'div', conf_botton_e) <= newdf.loc[idx, 'value'] \
+                            <= adjust_range(row['upper value'], 'mult', conf_top_e):
+                        y_pred_e.append(0)
+                    else:
+                        y_pred_e.append(1)
 
-        self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
-
-        try:
-            current_entropy = ant.svd_entropy(newdf['value'].to_numpy(), normalize=True)
-            entropy_identifier = self.entropy_boundary_bottom <= current_entropy <= self.entropy_boundary_up
-        except:
-            entropy_identifier = True
+        # self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
 
         print('round done')
 
-        return y_pred, entropy_identifier
+        return y_pred, y_pred_e
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])

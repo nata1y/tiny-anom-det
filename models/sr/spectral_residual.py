@@ -27,12 +27,15 @@ POSSIBILITY OF SUCH DAMAGE.
 import pandas as pd
 import numpy as np
 import antropy as ant
+from scipy import stats
 
 from models.sr.msanomalydetector.util import *
 import models.sr.msanomalydetector.boundary_utils as boundary_helper
 from models.statistical_models import SARIMA
 from msanomalydetector._anomaly_kernel_cython import median_filter
 import plotly.graph_objects as go
+
+from settings import anomaly_window
 
 
 class SpectralResidual:
@@ -64,16 +67,18 @@ class SpectralResidual:
         if self.__anomaly_frame is None:
             self.__anomaly_frame = self.__detect()
 
-        for start in range(0, len(self.__anomaly_frame), 60):
+        for start in range(0, len(self.__anomaly_frame), anomaly_window):
                 try:
                     self.svd_entropies.append(
-                        ant.svd_entropy(self.__anomaly_frame[start:start + 60]['value'].tolist(),
+                        ant.svd_entropy(self.__anomaly_frame[start:start + anomaly_window]['value'].tolist(),
                                         normalize=True))
                 except:
                     pass
-        self.boundary_bottom = np.mean([v for v in self.svd_entropies if pd.notna(v)]) - \
+        self.mean_entropy = np.mean([v for v in self.svd_entropies if pd.notna(v)])
+        print(self.mean_entropy)
+        self.boundary_bottom = self.mean_entropy - \
                           2.5 * np.std([v for v in self.svd_entropies if pd.notna(v)])
-        self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
+        self.boundary_up = self.mean_entropy + \
                       2.5 * np.std([v for v in self.svd_entropies if pd.notna(v)])
 
         print(self.boundary_up, self.boundary_bottom)
@@ -99,12 +104,17 @@ class SpectralResidual:
         # self.threshold_model.threshold_modelling = True
 
         if entropy < self.boundary_bottom or entropy > self.boundary_up:
-            result['isAnomaly_e'] = [1 for _ in range(result.shape[0])]
+            extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
+            extent = 1.5 - max(extent, 1.0 - extent)
+            threshold_adapted = self.__threshold__ * extent
+            # result['isAnomaly_e'] = [1 if result.loc[i, 'isAnomaly'] > threshold_adapted else 0
+            #                          for i in range(result.shape[0])]
+            result['isAnomaly_e'] = np.where(result['AnomalyScore'] > threshold_adapted, True, False)
         else:
             result['isAnomaly_e'] = result['isAnomaly']
         # self.threshold_model.predict(result[['timestamp', 'value']])
         # self.history = pd.concat([self.history, self.__anomaly_frame[-window_step:]])
-        return result[-60:]
+        return result[-anomaly_window:]
 
     def plot_dynamic_threshold(self, timestamps, dataset, datatype, filename, data_test):
         loss_df = pd.DataFrame([])
