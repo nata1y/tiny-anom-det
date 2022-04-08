@@ -8,6 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow
 from catch22 import catch22_all
+from matplotlib import cm
 from scipy.stats import ks_2samp
 from sklearn.metrics import make_scorer
 from skopt.callbacks import EarlyStopper
@@ -306,35 +307,41 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
         print(e)
 
 
-def plot_change(score_array, anomaly_idxs, model, ts, dataset, score, mdl, data):
+def plot_change(score_array, anomaly_idxs, model, ts, dataset, score, mdl, data, suf, anomaly_b):
     helper = pd.DataFrame([])
     helper['value'] = score_array
     helper['ma'] = helper.rolling(window=60).mean()
     # for k, v in data.items():
     #     plt.plot(range(len(v)), v, marker='o', label=k)
 
-    # plt.plot(range(len(score_array)), helper['ma'].tolist(), marker='*', color='red', label='Rolling mean')
-    # for idx in anomaly_idxs:
-    #     plt.axvline(x=idx, color='orange', linestyle='--')
     # plt.xlabel('Batch')
     # plt.ylabel(score)
     # plt.legend()
     # plt.savefig(f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_stream/{model}_{mdl}_{ts}.png')
     # plt.clf()
+    fig = plt.figure()
+    ax = plt.subplot(111)
 
+    color = iter(cm.rainbow(np.linspace(0, 1, 9)))
     for k, v in data.items():
+        c = next(color)
         helper = pd.DataFrame([])
         helper['value'] = v
         helper['ma'] = helper.rolling(window=60).mean()
-        plt.plot(range(len(v)), helper['ma'].tolist(), marker='o', label=k + ' MA')
+        ax.plot(range(len(v)), helper['ma'].tolist(), marker='o', label=k, color=c)
+    for idx in anomaly_b:
+        ax.axvline(x=idx // 60, color='orange', linestyle='--')
 
     # plt.plot(range(len(score_array)), helper['ma'].tolist(), marker='*', color='red', label='Rolling mean')
     # for idx in anomaly_idxs:
     #     plt.axvline(x=idx, color='orange', linestyle='--')
-    plt.xlabel('Batch')
-    plt.ylabel(score + ' MA')
-    plt.legend()
-    plt.savefig(f'C:\\Users\\ET34TU\\Documents\\models\\idpso-elm-b-anomaly\\images\\{model}_{mdl}_{ts}_ma_joined.png')
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
+    ax.set_xlabel('Batch')
+    ax.set_ylabel(score + ' MA')
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.savefig(f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\kpi_stream\\{dataset}\\fixed_threshold\\{model}_{dataset}_{ts}.png')
     plt.clf()
 
 
@@ -565,30 +572,73 @@ def analyze_anomalies(root_path):
 
 
 def avg_batch_f1():
-    for dataset, subsets in [('kpi', ['train'])]:
+    for dataset, subsets in [('kpi', 'train')]: # ('NAB', 'relevant')
+        for tss in subsets:
+            for suf in ['e', 'noe']:
+                #for model in ['sarima', 'lstm', 'sr']:
+                total = 0
+                avg_f1_before, avg_f1_after = 0.0, 0.0
+                if dataset == 'kpi':
+                    d = 35
+                else:
+                    d = 65
+                path = f'results\\{dataset}_{subsets}_stats_sr_per_batch_60_35.csv'
+                df_sr = pd.read_csv(path)
+                path = f'results\\{dataset}_{subsets}_stats_sarima_per_batch_60_35.csv'
+                df_sarima = pd.read_csv(path)
+                path = f'results\\{dataset}_{subsets}_stats_lstm_per_batch_60_35.csv'
+                df_lstm = pd.read_csv(path)
+                for score in ['f1-batched']:
+                    for ((idx_sr, row_sr), (idx_sarima, row_sarima), (idx_lstm, row_lstm)) \
+                            in zip(df_sr.iterrows(), df_sarima.iterrows(), df_lstm.iterrows()):
+                        res = {}
+                        res['sr-' + suf] = ast.literal_eval(row_sr[score + '-' + suf])
+                        res['sarima-' + suf] = ast.literal_eval(row_sarima[score + '-' + suf])
+                        res['lstm-' + suf] = ast.literal_eval(row_lstm[score + '-' + suf])
+                        l = []
+                        plot_change(l, [], 'all', row_sarima['dataset'], dataset, score, suf, res, suf, [])
+
+
+def avg_batch_f1_pso():
+    for dataset, subsets in [('kpi', 'train')]:
         for tss in subsets:
                 for model in ['']:
                     total = 0
                     avg_f1_before, avg_f1_after = 0.0, 0.0
+                    if dataset == 'kpi':
+                        d = 35
+                    else:
+                        d = 65
                     try:
-                        path = 'C:\\Users\\ET34TU\\Documents\\models\\idpso-elm-b-anomaly\\images\\kpi_train_stats_IDPSO_ELM_B_wdw_35_batched_fixeddrift.csv'
+                        path = f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_{subsets}_stats_IDPSO_ELM_B_wdw_{d}_batched_fixeddrift.csv'
 
                         df_fixed = pd.read_csv(path)
 
-                        path = 'C:\\Users\\ET34TU\\Documents\\models\\idpso-elm-b-anomaly\\images\\kpi_train_stats_IDPSO_ELM_B_wdw_35_batched_nodrift.csv'
+                        path = f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_{subsets}_stats_IDPSO_ELM_B_wdw_{d}_batched_nodrift.csv'
 
                         df_no = pd.read_csv(path)
+
+                        path = f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_{subsets}_stats_IDPSO_ELM_B_wdw_{d}_batched_dynamicdrift.csv'
+
+                        df_dy = pd.read_csv(path)
+
+                        path = f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\{dataset}_{subsets}_stats_IDPSO_ELM_B_anb_nodrift.csv'
+                        anomaly_df = pd.read_csv(path)
                         for score in ['f1-score']:
-                            for ((idx_no, row_no),(idx_fixed, row_fixed)) in zip(df_no.iterrows(), df_fixed.iterrows()):
+                            for ((idx_no, row_no), (idx_fixed, row_fixed),(idx_dy, row_dy)) in zip(df_no.iterrows(), df_fixed.iterrows(), df_dy.iterrows()):
                                 # l = ast.literal_eval(row['batch_metrics'])
                                 # a = ast.literal_eval(row['anomaly_idxs'])
-                                res = {}
                                 #  '0.01-0.1-turnoff-entropy-20-abs', 'or_entropy-turnoff-entropy-20-abs'
+                                anomaly_b = ast.literal_eval(anomaly_df.loc[idx_no, 'anomaly_batches'])
+
                                 for mdl in ['or_entropy-0.1-abs', '0.01-0.1-abs', 'fixed-0.1-abs']:
-                                    res[mdl + '-nodrift'] = ast.literal_eval(row_no[score + '-' + mdl + '-batched'])
-                                    res[mdl + '-fixeddrift'] = ast.literal_eval(row_fixed[score + '-' + mdl + '-batched'])
-                                l = ast.literal_eval(row_no[score + '-' + mdl + '-batched'])
-                                plot_change(l, [], 'IDPSO_ELM_B', row_no['dataset'], 'kpi', score, mdl, res)
+                                    res = {}
+                                    for suf, row in [('-nodrift', row_no), ('-fixeddrift', row_fixed),
+                                                 ('-dynamicdrift', row_dy)]:
+                                        res[mdl + suf] = ast.literal_eval(row[score + '-' + mdl + '-batched'])
+                                    l = ast.literal_eval(row_no[score + '-' + mdl + '-batched'])
+                                    print(row_no['dataset'])
+                                    plot_change(l, [], 'IDPSO_ELM_B', row_no['dataset'], dataset, score, mdl, res, mdl, anomaly_b)
                                 continue
                                 if not a:
                                     continue
@@ -638,3 +688,18 @@ def ks_stat(y, yhat):
         return ks_2samp(yhat[y == 1], yhat[y != 1]).statistic
     except:
         return 1.0
+
+
+def calculate_hourly_performance():
+    path = 'C:\\Users\\oxifl\\Documents\\uni\\thesis_models\\results\\entropy_addition'
+    for model in ['sarima', 'lstm', 'sr']:
+        df = pd.read_csv(os.path.join(path, f'NAB_windows_stats_{model}_wd_65_entropy.csv'))
+        ct, totale, total = 0, 0, 0
+        for idx, row in df.iterrows():
+            if 'ambient' in str(row['dataset']) or 'exchange' in str(row['dataset']) :
+                ct += 1
+                totale += row['f1-e']
+                total += row['f1-noe']
+
+        print(f'{model} f1 score normal is {total / ct} and entropy is {totale / ct}')
+    quit()

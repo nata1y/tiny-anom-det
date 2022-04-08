@@ -114,7 +114,7 @@ class SpectralResidual:
             result['isAnomaly_e'] = result['isAnomaly']
         # self.threshold_model.predict(result[['timestamp', 'value']])
         # self.history = pd.concat([self.history, self.__anomaly_frame[-window_step:]])
-        return result[-anomaly_window:]
+        return result[-window_step.shape[0]:]
 
     def plot_dynamic_threshold(self, timestamps, dataset, datatype, filename, data_test):
         loss_df = pd.DataFrame([])
