@@ -37,7 +37,6 @@ def entropy_modelling():
     # plt.savefig(f'results/ts_properties/imgs/entropy_analysis/entropy_colormap_NAB.png')
     # quit()
     entropies_no_anomalies = []
-    f1_scores = pd.DataFrame([])
     # step = 100
 
     # for entropy_name in ['spectral_entropy', 'value_decomposition_entropy', 'approximate_entropy',
@@ -48,13 +47,14 @@ def entropy_modelling():
             for factor in np.arange(0.5, 4.1, 0.1):
                 factor = round(factor, 1)
                 print(f'Doing entropy {wdw}, {factor}')
-                for dataset, subsets in [('NAB', ['windows'])]:
+                for dataset, subsets in [('yahoo', 'real'), ('yahoo', 'synthetic'),
+                                         ('yahoo', 'A4Benchmark'), ('yahoo', 'A3Benchmark')]:
                     # print(f1_scores[(f1_scores['factor'] == factor) & (f1_scores['window'] == wdw) & (f1_scores['dataset'] == dataset)])
-                    # if not f1_scores[(f1_scores['factor'] == factor) & (f1_scores['window'] == wdw) & (f1_scores['dataset'] == dataset)].empty:
+                    if not f1_scores[(f1_scores['factor'] == factor) & (f1_scores['window'] == wdw) & (f1_scores['dataset'] == dataset)].empty:
                     #     continue
-                    for tss in subsets:
+                    # for tss in subsets:
                         hcs = pd.DataFrame([])
-                        train_data_path = 'datasets/' + dataset + '/' + tss + '/'
+                        train_data_path = 'datasets/' + dataset + '/' + subsets + '/'
 
                         res = pd.DataFrame([])
                         for filename in os.listdir(train_data_path):
@@ -264,9 +264,9 @@ def entropy_modelling():
                                     'tn': tn
                                 }, ignore_index=True)
                             except Exception as e:
-                                print(e)
+                                pass
 
-                        res.to_csv(f'results/ts_properties/entropies/{entropy_name}_{dataset}_{tss}_step_{wdw}.csv')
+                        # res.to_csv(f'results/ts_properties/entropies/{entropy_name}_{dataset}_{tss}_step_{wdw}.csv')
                         f1_scores = f1_scores.append({
                             'window': wdw,
                             'f1-score': np.mean(res['f1'].to_numpy()),
@@ -275,5 +275,5 @@ def entropy_modelling():
                             'dataset': dataset,
                             'factor': factor
                         }, ignore_index=True)
-                        f1_scores.to_csv(f'results/ts_properties/entropies/entropy_vs_window_w_factor_window_nab.csv')
+                        f1_scores.to_csv(f'results/ts_properties/entropies/entropy_vs_window_{dataset}_{subsets}.csv')
                 # hcs.to_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv')
