@@ -37,15 +37,15 @@ models = {
           # 'seq2seq': (OutlierSeq2Seq, [Integer(low=1, high=100, name='latent_dim'),
           #                              Real(low=0.5, high=0.999, name='percent_anom')], [2, 0.95]),
           # 'orion': (Orion(), [], []),
-            'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
-                                      Integer(low=1, high=30, name='MAG_WINDOW'),
-                                      Integer(low=5, high=1000, name='SCORE_WINDOW'),
-                                      Integer(low=1, high=100, name='sensitivity')],
-                   [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-            'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
+          # 'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
+          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
+          #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
+          #                           Integer(low=1, high=100, name='sensitivity')],
+          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
           # 'seasonal_decomp': (DecomposeResidual, [], []),
           # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-          #            [1.2, 1.2]),
+          #              [1.2, 1.2]),
           # 'prophet': (Prophet, [], []),
           # 'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
           # 'dp': (DriftPointModel, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton"),
@@ -90,7 +90,22 @@ kpi_ts_same_granularity = [
     'a8c06b47-cc41-3738-9110-12df0ee4c721',
     'ab216663-dcc2-3a24-b1ee-2c3e550e06c9',
     'c02607e8-7399-3dde-9d28-8a8da5e5d251',
-    'e0747cad-8dc8-38a9-a9ab-855b61f5551d'
+    'e0747cad-8dc8-38a9-a9ab-855b61f5551d',
+
+    'cpu_utilization_asg_misconfiguration',
+    'ec2_cpu_utilization_24ae8d',
+    'ec2_cpu_utilization_53ea38',
+    'ec2_cpu_utilization_5f5533',
+    'ec2_cpu_utilization_77c1ca',
+    'ec2_cpu_utilization_825cc2',
+    'ec2_cpu_utilization_ac20cd',
+    'ec2_cpu_utilization_c6585a',
+    'ec2_cpu_utilization_fe7f93',
+    'ec2_disk_write_bytes_1ef3de',
+    'ec2_disk_write_bytes_c0d644',
+    'ec2_network_in_257a54',
+    'ec2_network_in_5abac7',
+    'ec2_request_latency_system_failure'
 ]
 
 
@@ -149,4 +164,79 @@ anomaly_taxonomy = {
            'real_63', 'real_66', 'real_67', 'cpu_utilization_asg_misconfiguration'],
     '7e': ['real_55', 'real_56'],
     '7f': ['real_65']
+}
+
+nab_grouping = {
+    'artificialNoAnomaly': [
+        'art_daily_nojump',
+        'art_daily_no_noise',
+        'art_daily_small_noise',
+        'art_flatline',
+        'art_noisy'
+    ],
+    'artificialWithAnomaly': [
+        'art_daily_flatmiddle',
+        'art_daily_jumpsdown',
+        'art_daily_jumpsup',
+        'art_daily_perfect_square_wave',
+        'art_increase_spike_density',
+        'art_load_balancer_spikes'
+    ],
+    'realAWSCloudwatch': [
+        'ec2_cpu_utilization_24ae8d',
+        'ec2_cpu_utilization_53ea38',
+        'ec2_cpu_utilization_5f5533',
+        'ec2_cpu_utilization_77c1ca',
+        'ec2_cpu_utilization_825cc2',
+        'ec2_cpu_utilization_ac20cd',
+        'ec2_cpu_utilization_c6585a',
+        'ec2_cpu_utilization_fe7f93',
+        'ec2_disk_write_bytes_1ef3de',
+        'ec2_disk_write_bytes_c0d644',
+        'ec2_network_in_257a54',
+        'ec2_network_in_5abac7',
+        'grok_asg_anomaly',
+        'iio_us-east-1_i-a2eb1cd9_NetworkIn',
+        'rds_cpu_utilization_cc0c53',
+        'rds_cpu_utilization_e47b3b',
+        'elb_request_count_8c0756'
+    ],
+    'realAdExchange': [
+        'exchange-2_cpc_results',
+        'exchange-2_cpm_results',
+        'exchange-3_cpc_results',
+        'exchange-3_cpm_results',
+        'exchange-4_cpc_results',
+        'exchange-4_cpm_results'
+    ],
+    'realKnownCause': [
+        'ec2_request_latency_system_failure',
+        'machine_temperature_system_failure',
+        'nyc_taxi',
+        'rogue_agent_key_hold',
+        'rogue_agent_key_updown',
+        'ambient_temperature_system_failure',
+        'cpu_utilization_asg_misconfiguration',
+    ],
+    'realTraffic': [
+        'speed_6005',
+        'speed_7578',
+        'speed_t4013',
+        'TravelTime_387',
+        'TravelTime_451',
+        'occupancy_6005',
+        'occupancy_t4013'
+    ],
+    'realTweets':[
+        'Twitter_volume_AAPL',
+        'Twitter_volume_AMZN',
+        'Twitter_volume_CRM',
+        'Twitter_volume_CVS',
+        'Twitter_volume_FB',
+        'Twitter_volume_GOOG',
+        'Twitter_volume_IBM',
+        'Twitter_volume_KO',
+        'Twitter_volume_PFE',
+        'Twitter_volume_UPS'
+                      ]
 }
