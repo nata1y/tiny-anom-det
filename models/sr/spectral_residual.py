@@ -23,31 +23,27 @@ IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THE SOFTWARE CODE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 """
+from datetime import datetime
 
 import pandas as pd
-import numpy as np
 import antropy as ant
 from scipy import stats
 
 from models.sr.msanomalydetector.util import *
 import models.sr.msanomalydetector.boundary_utils as boundary_helper
-from models.statistical_models import SARIMA
-from msanomalydetector._anomaly_kernel_cython import median_filter
 import plotly.graph_objects as go
 
-from settings import anomaly_window
+from settings import anomaly_window, entropy_params, data_in_memory_sz
 
 
 class SpectralResidual:
-    def __init__(self, series, threshold, mag_window, score_window, sensitivity, detect_mode, batch_size=32, dt=True):
+    def __init__(self, series, threshold, mag_window, score_window,
+                 sensitivity, detect_mode, dataset,
+                 datatype, batch_size=32):
         self.__series__ = series
         self.__values__ = self.__series__['value'].tolist()
-        # hyperparam tau = thershold?, tau = 3
         self.__threshold__ = threshold
-        # hyperparam q = 3
         self.__mag_window = mag_window
-        # hyperparam z = 21
-        #number of local average of preceding points
         self.__score_window = score_window
         self.__sensitivity = sensitivity
         self.__detect_mode = detect_mode
@@ -60,7 +56,10 @@ class SpectralResidual:
         self.__batch_size = min(len(series), self.__batch_size)
         self.history = pd.DataFrame([])
         self.dynamic_threshold = True
-        self.threshold_model = SARIMA(1.3)
+        self.datatype = datatype
+        self.dataset = dataset
+        self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
+        self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
 
     def fit(self):
         self.svd_entropies = []
@@ -76,27 +75,42 @@ class SpectralResidual:
         self.mean_entropy = np.mean([v for v in self.svd_entropies if pd.notna(v)])
         print(self.mean_entropy)
         self.boundary_bottom = self.mean_entropy - \
-                          1.6 * np.std([v for v in self.svd_entropies if pd.notna(v)])
+                               self.entropy_factor * \
+                               np.std([v for v in self.svd_entropies if pd.notna(v)])
         self.boundary_up = self.mean_entropy + \
-                      1.6 * np.std([v for v in self.svd_entropies if pd.notna(v)])
+                           self.entropy_factor * \
+                           np.std([v for v in self.svd_entropies if pd.notna(v)])
 
         print(self.boundary_up, self.boundary_bottom)
 
         result = self.__anomaly_frame
-
-        # self.threshold_model.dataset = 'kpi'
-        # self.threshold_model.threshold_modelling = True
-
-        # result['value'] = result['score']
-        # self.threshold_model.fit(result[['timestamp', 'value']], 'kpi')
         return result
 
-    def detect_dynamic_threshold(self, window_step, anomaly_window_curr):
+    def _g(self, x1, y1, x2, y2):
+        slope = (y2 - y1) / (x2 - x1)
+        return slope
+
+    def _stuff_g_vals(self, wdw_sz):
+        m = 5
+        self.__series__['timestamp'] = self.__series__['timestamp'].apply(
+            lambda x: datetime.strptime(x, '%Y-%m-%d %H:%M:%S').timestamp())
+        for i in range(data_in_memory_sz-wdw_sz):
+            ghat = np.mean([self._g(self.__series__.shape[0],
+                                    self.__series__['value'].tolist()[-1],
+                                    self.__series__.shape[0]-i,
+                                    self.__series__['value'].tolist()[-1-i])
+                            for i in range(self.__series__.shape[0] - m, self.__series__.shape[0])])
+            self.__series__.append({
+                'timestamp': int(self.__series__['timestamp'].tolist()[-1]) + 1.0,
+                'value': self.__series__['value'].tolist()[self.__series__.shape[0] - m + 1] + ghat * m},
+                ignore_index=True)
+
+    def detect_dynamic_threshold(self, window_step):
         self.__anomaly_frame = self.__detect()
         try:
-            entropy = ant.svd_entropy(window_step['value'].tolist()[-anomaly_window_curr:], normalize=True)
+            entropy = ant.svd_entropy(window_step['value'].tolist()[-self.entropy_window:], normalize=True)
         except:
-            return [0 for _ in range(anomaly_window_curr)]
+            entropy = (self.boundary_bottom + self.boundary_up) / 2
 
         result = self.__anomaly_frame
 
@@ -104,20 +118,11 @@ class SpectralResidual:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
             extent = 1.5 - max(extent, 1.0 - extent)
             threshold_adapted = self.__threshold__ * extent
-            # result['isAnomaly_e'] = [1 if result.loc[i, 'isAnomaly'] > threshold_adapted else 0
-            #                          for i in range(result.shape[0])]
             result['isAnomaly_e'] = np.where(result['score'] > threshold_adapted, True, False)
         else:
             result['isAnomaly_e'] = result['isAnomaly']
-        # self.threshold_model.predict(result[['timestamp', 'value']])
 
-        return result[-anomaly_window_curr:]
-
-    def plot_dynamic_threshold(self, timestamps, dataset, datatype, filename, data_test):
-        loss_df = pd.DataFrame([])
-        loss_df['value'] = self.history['score'].tolist()
-        loss_df['timestamp'] = timestamps
-        self.threshold_model.plot_threshold(loss_df, dataset, datatype, filename, data_test, 'sr')
+        return result[data_in_memory_sz-self.entropy_window:data_in_memory_sz]
 
     def plot(self, dataset, datatype, filename, datatest, drift_windows):
         fig = go.Figure()
@@ -153,7 +158,7 @@ class SpectralResidual:
                                                                         self.history['score'].min(),
                                                                         self.history['score'].max(),
                                                                         self.history['score'].max()],
-                                     fill='toself'))  # fill to trace0 y
+                                     fill='toself'))
 
         fig.update_layout(showlegend=True, title='Saliency map')
         fig.write_image(
@@ -221,7 +226,6 @@ class SpectralResidual:
         return anomaly_frame
 
     def generate_spectral_score(self, mags):
-        # score window is z hyperparameter = 21
         ave_mag = average_filter(mags, n=self.__score_window)
         safeDivisors = np.clip(ave_mag, EPS, ave_mag.max())
 

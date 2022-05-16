@@ -2,31 +2,8 @@
 # currently depricated
 import copy
 from matplotlib import pyplot
-from pandas.plotting import autocorrelation_plot
 import numpy as np
 from scipy import fftpack, signal
-
-
-def visualize(data):
-    print(data['value'].describe())
-    pyplot.plot(data['timestamp'], data['value'])
-    pyplot.show()
-    quit()
-
-    data['value'].hist()
-    pyplot.show()
-
-    autocorrelation_plot(data['value'])
-    pyplot.show()
-
-    # res = seasonal_decompose(data['value'].interpolate(),
-    #                          freq=52)
-    # res.plot()
-
-
-def full_analysis(data, dataset, datatype):
-    # series_analysis(data)
-    periodicity_analysis(data, dataset, datatype)
 
 
 def periodicity_analysis(data_, dataset='', datatype=''):

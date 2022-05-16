@@ -1,47 +1,35 @@
-# from https://github.com/RuoyunCarina-D/Anomly-Detection-SARIMA/blob/master/SARIMA.py
-import copy
+# twist on https://github.com/RuoyunCarina-D/Anomly-Detection-SARIMA/blob/master/SARIMA.py
 import datetime
 import itertools
-import math
-import sys
-from collections import Counter
-
-import funcy
 import numpy as np
 from scipy import stats
-from sklearn.cluster import DBSCAN
-from sklearn.metrics import mean_squared_log_error
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import pandas as pd
 import matplotlib.pyplot as plt
 import antropy as ant
-from tslearn.metrics import dtw
 
-from analysis.preanalysis import periodicity_analysis
-from settings import anomaly_window
+from settings import entropy_params
 from utils import adjust_range
-import plotly.graph_objects as go
 
 
 class SARIMA:
-    model = None
-    dataset = ''
 
-    def __init__(self, conf_top=1.5, conf_botton=1.5, train_size=3000):
+    def __init__(self, dataset, datatype, conf_top=1.5, conf_bottom=1.5, train_size=3000):
         self.full_pred = []
         self.mean_fluctuation = []
         self.monitoring_pred = []
         self.conf_top = conf_top
-        self.conf_botton = conf_botton
+        self.conf_bottom = conf_bottom
         self.threshold_modelling = False
         self.train_size = train_size
         self.latest_train_snippest = pd.DataFrame([])
         self.result_memory_size = 500
         self.memory_threshold = 500
         self.freq = None
+        self.datatype = datatype
+        self.dataset = dataset
+        self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
+        self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
 
     def _check_freq(self, idx):
         if self.freq:
@@ -121,18 +109,15 @@ class SARIMA:
                 except Exception as e:
                     print(e)
 
-        # print("Best SARIMAX{}x{}12 model - AIC:{}".format(best_pdq, best_seasonal_pdq, best_aic))
         self.model = self.model.fit()
         # print(self.model.summary())
         # self.latest_train_snippest = data
 
     def form_entropy(self, data):
         collected_entropies = []
-        entropy_differences = []
-        entropies_no_anomalies = []
 
-        for start in range(0, data.shape[0], anomaly_window):
-            window = data.iloc[start:start + anomaly_window]
+        for start in range(0, data.shape[0], self.entropy_window):
+            window = data.iloc[start:start + self.entropy_window]
 
             try:
                 collected_entropies.append(
@@ -140,17 +125,14 @@ class SARIMA:
             except Exception as e:
                 pass
 
-            # if len(collected_entropies) > 1:
-            #     entropy_differences.append(
-            #         abs(collected_entropies[-1] - collected_entropies[-2]))
-
-            # if window['is_anomaly'].tolist().count(1) == 0:
-            #     entropies_no_anomalies.append(collected_entropies[-1])
-
         self.mean_entropy = np.mean([v for v in collected_entropies if pd.notna(v)])
         self.collected_entropies = collected_entropies
-        self.entropy_boundary_bottom = self.mean_entropy - 2.5 * np.std([v for v in collected_entropies if pd.notna(v)])
-        self.entropy_boundary_up = self.mean_entropy + 2.5 * np.std([v for v in collected_entropies if pd.notna(v)])
+        self.entropy_boundary_bottom = self.mean_entropy - \
+                                       self.entropy_factor * \
+                                       np.std([v for v in collected_entropies if pd.notna(v)])
+        self.entropy_boundary_up = self.mean_entropy + \
+                                   self.entropy_factor * \
+                                   np.std([v for v in collected_entropies if pd.notna(v)])
 
     def predict(self, newdf, optimization=False, in_dp=False):
         y_pred = []
@@ -164,10 +146,12 @@ class SARIMA:
             entropy_identifier = self.entropy_boundary_bottom <= current_entropy <= self.entropy_boundary_up
             extent = stats.percentileofscore(self.collected_entropies, current_entropy) / 100.0
             extent = 1.5 - max(extent, 1.0 - extent)
-            conf_botton_e = adjust_range(self.conf_botton, 'div', extent)
+            conf_bottom_e = adjust_range(self.conf_bottom, 'div', extent)
             conf_top_e = adjust_range(self.conf_top, 'mult', extent)
         except:
             entropy_identifier = True
+            conf_bottom_e = self.conf_bottom
+            conf_top_e = self.conf_top
 
         try:
             if not optimization:
@@ -186,7 +170,6 @@ class SARIMA:
                     if in_dp:
                         newdf = newdf[0:1]
                     self.model = self.model.append(newdf)
-                    # self.model = self.model.apply(newdf, refit=False)
 
         except ValueError as e:
             if not optimization:
@@ -220,14 +203,12 @@ class SARIMA:
             #self.full_pred.append(pred_point)
 
         pred_ci = pred.conf_int()
-        # deanomalized_window = pd.DataFrame([])
 
         print('calculating anomalies')
 
         for idx, row in pred_ci.iterrows():
-            value = None
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
-                if adjust_range(row['lower value'], 'div', self.conf_botton) <= newdf.loc[idx, 'value'] \
+                if adjust_range(row['lower value'], 'div', self.conf_bottom) <= newdf.loc[idx, 'value'] \
                         <= adjust_range(row['upper value'], 'mult', self.conf_top):
                     y_pred.append(0)
                     if entropy_identifier:
@@ -238,7 +219,7 @@ class SARIMA:
                         y_pred_e.append(1)
 
                 if not entropy_identifier:
-                    if adjust_range(row['lower value'], 'div', conf_botton_e) <= newdf.loc[idx, 'value'] \
+                    if adjust_range(row['lower value'], 'div', conf_bottom_e) <= newdf.loc[idx, 'value'] \
                             <= adjust_range(row['upper value'], 'mult', conf_top_e):
                         y_pred_e.append(0)
                     else:
@@ -257,39 +238,6 @@ class SARIMA:
 
         return pred_thr[['lower value', 'upper value']]
 
-    def plot_ensemble(self, y, dataset, datatype, filename, full_test_data, drift_windows, detected_anomalies):
-        detected_anomalies = pd.to_datetime(pd.Series(detected_anomalies), unit='s').tolist()
-        full_test_data = self._get_time_index(full_test_data)
-
-        y = self._get_time_index(y)
-        y = y.dropna(subset=['value'])
-        ax = y['value'].plot(label='observed', zorder=1)
-
-        pred_ci = pd.concat([x.conf_int() for x in self.full_pred], axis=0)
-        ax.fill_between(pred_ci.index,
-                        pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
-                        pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
-                        color='b', alpha=.2, zorder=0)
-
-        for tm in detected_anomalies:
-            if full_test_data.loc[tm, 'is_anomaly'] == 0:
-                ax.scatter(tm, y.loc[tm, 'value'], color='r')
-        for tm, row in full_test_data[full_test_data['is_anomaly'] == 1].iterrows():
-            if tm not in detected_anomalies:
-                ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
-
-        for wd in drift_windows:
-            ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Values')
-        plt.legend()
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/dp/sarima_{filename.replace(".csv", "")}_full.png')
-
-        plt.close('all')
-        plt.clf()
-
-        self.full_pred = []
-
     def plot(self, y, dataset, datatype, filename, full_test_data, drift_windows):
         print('plotting....')
         y = self._get_time_index(y)
@@ -303,17 +251,17 @@ class SARIMA:
             if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
                 pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
                 ax.fill_between(pred_ci.index,
-                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_botton)),
+                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_bottom)),
                                 pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
                                 color='b', alpha=.2)
 
             for tm, row in pred_ci.iterrows():
                 if tm in y.index:
-                    if (adjust_range(row['lower value'], 'div', self.conf_botton) > y.loc[tm, 'value'] or
+                    if (adjust_range(row['lower value'], 'div', self.conf_bottom) > y.loc[tm, 'value'] or
                         y.loc[tm, 'value'] > adjust_range(row['upper value'], 'mult', self.conf_top)) and \
                             full_test_data.loc[tm, 'is_anomaly'] == 0:
                         ax.scatter(tm, y.loc[tm, 'value'], color='r')
-                    if (adjust_range(row['lower value'], 'div', self.conf_botton) <= y.loc[tm, 'value'] <=
+                    if (adjust_range(row['lower value'], 'div', self.conf_bottom) <= y.loc[tm, 'value'] <=
                         adjust_range(row['upper value'], 'mult', self.conf_top)) \
                             and full_test_data.loc[tm, 'is_anomaly'] == 1:
                         ax.scatter(tm, y.loc[tm, 'value'], color='darkmagenta')
@@ -330,95 +278,4 @@ class SARIMA:
         plt.close('all')
         plt.clf()
 
-        self.full_pred = []
-
-
-class ExpSmoothing:
-    model = None
-    dataset = ''
-    full_pred = []
-
-    def __init__(self, sims=10):
-        self.full_pred = []
-        self.sims = sims
-
-    def _get_time_index(self, data_):
-        data = copy.deepcopy(data_)
-        if self.dataset in ['yahoo', 'kpi']:
-            data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
-        return data.set_index('timestamp')
-
-    def fit(self, data, dataset):
-        self.dataset = dataset
-        data = self._get_time_index(data)
-        self.model = ExponentialSmoothing(data,
-                                          seasonal_periods=12,
-                                          trend="add",
-                                          seasonal="add",
-                                          damped_trend=True,
-                                          initialization_method="estimated",
-                                          ).fit()
-
-    def predict(self, newdf, window):
-        y_pred = []
-        newdf = self._get_time_index(newdf)
-
-        pred = self.model.forecast(min(window, newdf.shape[0]))
-        simulations = self.model.simulate(min(window, newdf.shape[0]), repetitions=self.sims, error="add")
-        simulations['upper value'] = simulations.max(axis=1)
-        simulations['lower value'] = simulations.min(axis=1)
-        simulations['pred'] = pred
-        simulations['timestamp'] = newdf.index
-        simulations = self._get_time_index(simulations)
-        self.full_pred.append(simulations[['upper value', 'lower value', 'pred']])
-
-        for idx, row in simulations.iterrows():
-            try:
-                if row['lower value'] <= newdf.loc[idx, 'value'] <= row['upper value']:
-                    y_pred.append(0)
-                else:
-                    y_pred.append(1)
-            except Exception as e:
-                raise e
-
-        return y_pred
-
-    def plot(self, y, dataset, datatype, filename, full_test_data_, drift_windows):
-        full_test_data = self._get_time_index(full_test_data_)
-        ax = full_test_data['value'].plot(label='observed')
-
-        for w, fpred in enumerate(self.full_pred):
-            ax.fill_between(fpred.index,
-                            fpred['lower value'],
-                            fpred['upper value'], color='k', alpha=.2)
-
-            print(fpred)
-            fpred['pred'].plot(label=f'Window {w} forecast', alpha=.7, figsize=(14, 7))
-            for idx, pred in fpred.iterrows():
-                try:
-                    if idx in full_test_data.index:
-                        if (pred['lower value'] > full_test_data.loc[idx, 'value'] or
-                            full_test_data.loc[idx, 'value'] > pred['upper value']) and \
-                                full_test_data.loc[idx, 'is_anomaly'] == 0:
-                            ax.scatter(idx, full_test_data.loc[idx, 'value'], color='r')
-                        if (pred['lower value'] <= full_test_data.loc[idx, 'value'] <= pred['upper value']) \
-                                and full_test_data.loc[idx, 'is_anomaly'] == 1:
-                            ax.scatter(idx, full_test_data.loc[idx, 'value'], color='darkmagenta')
-                except Exception as e:
-                    print('==========================================================')
-                    print(self.full_pred)
-                    print(pred)
-                    print(idx)
-                    raise e
-
-        for wd in drift_windows:
-            ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
-
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Values')
-        plt.legend()
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/es/es_{filename.replace(".csv", "")}_smooth.png')
-
-        plt.close('all')
-        plt.clf()
         self.full_pred = []
