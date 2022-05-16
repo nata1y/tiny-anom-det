@@ -7,6 +7,7 @@ import mock
 from sklearn import preprocessing
 from skopt.callbacks import EarlyStopper
 
+from models.pso_elem.pso_elm_anomaly import IDPSO_ELM_B_anomaly, PSO_ELM_anomaly
 from utils import plot_general
 from sklearn.metrics import hamming_loss, cohen_kappa_score
 from skopt import gp_minimize
@@ -68,6 +69,13 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'lstm':
         model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename.replace(".csv", ""),
                                  magnitude=model_params[0])
+    elif name == 'pso-elm':
+        # take pso-elm train size as variable
+        n = min(model_params[0], data_train.shape[0])
+        model = PSO_ELM_anomaly(n=n,
+                                magnitude=model_params[1],
+                                entropy_window=anomaly_window,
+                                error_threshold=model_params[2])
 
     if name == 'sarima':
 
