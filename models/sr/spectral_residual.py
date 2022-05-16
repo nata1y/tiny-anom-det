@@ -122,13 +122,15 @@ class SpectralResidual:
         else:
             result['isAnomaly_e'] = result['isAnomaly']
 
-        return result[data_in_memory_sz-self.entropy_window:data_in_memory_sz]
+        self.history = self.history.append(result[-self.entropy_window:], ignore_index=True)
+        return result[-self.entropy_window:]
 
     def plot(self, dataset, datatype, filename, datatest, drift_windows):
         fig = go.Figure()
 
         datatest.set_index('timestamp', inplace=True)
 
+        print(self.history.head())
         self.history.set_index('timestamp', inplace=True)
 
         fig.add_trace(go.Scatter(x=self.history.index, y=self.history['score'].tolist(), name='Residual scores'))
@@ -162,7 +164,7 @@ class SpectralResidual:
 
         fig.update_layout(showlegend=True, title='Saliency map')
         fig.write_image(
-            f'results/imgs/{dataset}/{datatype}/sr/sr_{filename.replace(".csv", "")}_saliency_map.png')
+            f'results/imgs/{dataset}/{datatype}/sr_{filename.replace(".csv", "")}_saliency_map.png')
 
         fig.data = []
 

@@ -7,7 +7,7 @@ import mock
 from sklearn import preprocessing
 from skopt.callbacks import EarlyStopper
 
-from utils import plot_change, plot_general
+from utils import plot_general
 from sklearn.metrics import hamming_loss, cohen_kappa_score
 from skopt import gp_minimize
 
@@ -43,7 +43,7 @@ class Stopper(EarlyStopper):
 
 
 def fit_base_model(model_params, for_optimization=True):
-    global can_model, traintime, predtime, batched_f1_score, batch_metrices, bwa
+    global can_model, traintime, predtime, batched_f1_score, batch_metrices, bwa, dataset
 
     # 50% train-test split
     if dataset == 'kpi':
@@ -89,7 +89,7 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'sr':
         model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
-                                 detect_mode=DetectMode.anomaly_only)
+                                 detect_mode=DetectMode.anomaly_only, dataset=dataset, datatype=type)
         model.fit()
 
     end = time.time()
@@ -166,8 +166,9 @@ def fit_base_model(model_params, for_optimization=True):
             raise e
 
     if not for_optimization:
+        print('Plotting..........')
         plot_general(model, dataset, type, name, data_test,
-                     y_pred_total, filename, drift_windows)
+                     y_pred_total_e, filename, drift_windows)
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -204,8 +205,6 @@ def fit_base_model(model_params, for_optimization=True):
             'f1-noe': met_total_noe[2][-1],
         }, ignore_index=True)
         stats_full.to_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_test.csv', index=False)
-        plot_change(batch_metrices, batches_with_anomalies, name, filename.replace('.csv', ''), dataset)
-
     # return specificity if no anomalies, else return f1 score
     if data_test['is_anomaly'].tolist().count(1) == 0:
         return 1.0 - met_total_noe[0][-1]
@@ -262,37 +261,34 @@ if __name__ == '__main__':
                             lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
 
                     try:
-                        if def_params and name not in ['knn', 'mogaal', 'mmd-online']:
                         ################ Bayesian optimization ###################################################
-                            if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
-                                print(bo_space)
-                                try:
-                                    bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                                                            random_state=3, verbose=True, x0=def_params)
-                                except ValueError as e:
-                                    # error is rised when function yields constant value and does not converge
-                                    bo_result = mock.Mock()
-                                    bo_result.x = def_params
-
-                                print(f"Found hyper parameters for {name}: {bo_result.x}")
-
-                                if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
-                                    hp = hp.append({
-                                        'filename': filename.replace('.csv', ''),
-                                        'model': name,
-                                        'hp': bo_result.x
-                                    }, ignore_index=True)
-
-                                    hp.to_csv('hyperparams.csv', index=False)
-                            else:
+                        if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
+                            print(bo_space)
+                            try:
+                                bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                                                        random_state=3, verbose=True, x0=def_params)
+                            except ValueError as e:
+                                # error is rised when function yields constant value and does not converge
                                 bo_result = mock.Mock()
-                                bo_result.x = ast.literal_eval(
-                                    hp[(hp['filename'] == filename.replace('.csv', ''))
-                                       & (hp['model'] == name)]['hp'].tolist()[0])
+                                bo_result.x = def_params
 
-                                fit_base_model(bo_result.x, for_optimization=False)
+                            print(f"Found hyper parameters for {name}: {bo_result.x}")
+
+                            if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
+                                hp = hp.append({
+                                    'filename': filename.replace('.csv', ''),
+                                    'model': name,
+                                    'hp': bo_result.x
+                                }, ignore_index=True)
+
+                                hp.to_csv('hyperparams.csv', index=False)
                         else:
-                            fit_base_model(def_params, for_optimization=False)
+                            bo_result = mock.Mock()
+                            bo_result.x = ast.literal_eval(
+                                hp[(hp['filename'] == filename.replace('.csv', ''))
+                                   & (hp['model'] == name)]['hp'].tolist()[0])
+
+                        fit_base_model(bo_result.x, for_optimization=False)
 
                     except Exception as e:
                         raise e

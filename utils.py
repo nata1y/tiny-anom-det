@@ -364,47 +364,14 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
         raise e
 
     try:
-        if name in ['sarima', 'es']:
+        if name == 'sarima':
             model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test, drift_windows)
-        elif name in ['lstm']:
+        elif name == 'lstm':
             model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test, drift_windows)
-        elif name == 'dp':
-            model.plot(data_test[['timestamp', 'value']], type, data_test)
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test, drift_windows)
     except Exception as e:
-        print(e)
-
-
-def plot_change(score_array, anomaly_idxs, model, ts, dataset, score, mdl, data, suf, anomaly_b):
-    helper = pd.DataFrame([])
-    helper['value'] = score_array
-    helper['ma'] = helper.rolling(window=60).mean()
-
-    fig = plt.figure()
-    ax = plt.subplot(111)
-
-    color = iter(cm.rainbow(np.linspace(0, 1, 9)))
-    for k, v in data.items():
-        c = next(color)
-        helper = pd.DataFrame([])
-        helper['value'] = v
-        helper['ma'] = helper.rolling(window=10).mean()
-        ax.plot(range(len(v)), helper['ma'].tolist(), marker='o', label=k, color=c)
-    for idx in anomaly_b:
-        ax.axvline(x=idx // 60, color='orange', linestyle='--')
-
-    # plt.plot(range(len(score_array)), helper['ma'].tolist(), marker='*', color='red', label='Rolling mean')
-    # for idx in anomaly_idxs:
-    #     plt.axvline(x=idx, color='orange', linestyle='--')
-    # Shrink current axis by 20%
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
-    ax.set_xlabel('Batch')
-    ax.set_ylabel(score + ' MA')
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    plt.savefig(f'C:\\Users\\oxifl\\Documents\\uni\\idpso-elm-b-anomaly\\images\\change_performance\\{dataset}\\tuned\\PSO_ELM_{ts}.png')
-    plt.clf()
+        raise e
 
 
 def avg_batch_f1():
