@@ -40,6 +40,7 @@ class LSTM_autoencoder:
         self.dataset = dataset
         self.filename = filename
         self.loss = []
+        self.predicted = []
         self.window = X_shape[0]
         self.entr_factor = entropy_params[f'{dataset}_{datatype}']['factor']
 
@@ -95,12 +96,13 @@ class LSTM_autoencoder:
             y_pred2 = [0 if loss[idx] <= threshold_adapted else 1 for idx in range(len(loss))]
 
         self.loss += loss.flatten().tolist()
+        self.predicted += y_pred1
         return y_pred1, y_pred2
 
-    def plot(self, timestamps):
+    def plot(self, datatest):
         loss_df = pd.DataFrame([])
         loss_df['value'] = self.loss
-        loss_df['timestamp'] = timestamps
+        loss_df['timestamp'] = datatest['timestamp'].tolist()
         arranged_loss = loss_df
 
         fig = go.Figure()
@@ -108,7 +110,25 @@ class LSTM_autoencoder:
         fig.add_trace(go.Scatter(x=arranged_loss.index.tolist(), y=arranged_loss['value'].tolist(), name='Test loss'))
         fig.add_trace(go.Scatter(x=arranged_loss.index.tolist(), y=[self.threshold for _ in range(arranged_loss.shape[0])],
                                  name='Threshold'))
+
+        x_fp, y_fp = [], []
+        x_fn, y_fn = [], []
+
+        datatest.reset_index(inplace=True)
+        for tm, row in loss_df.iterrows():
+            if tm in datatest.index:
+                if self.predicted[tm] == 1 and datatest.loc[tm, 'is_anomaly'] == 0:
+                    x_fp.append(tm)
+                    y_fp.append(row['value'])
+                if self.predicted[tm] == 0 and datatest.loc[tm, 'is_anomaly'] == 1:
+                    x_fn.append(tm)
+                    y_fn.append(row['value'])
+
+        if x_fp:
+            fig.add_trace(go.Scatter(x=x_fp, y=y_fp, name='FP', mode="markers"))
+        if x_fn:
+            fig.add_trace(go.Scatter(x=x_fn, y=y_fn, name='FN', mode="markers"))
         fig.update_layout(showlegend=True, title='Test loss vs. Threshold')
-        fig.write_image(f'results/imgs/{self.dataset}/{self.datatype}/lstm/lstm_{self.filename.replace(".csv", "")}_full.png')
+        fig.write_image(f'results/imgs/{self.dataset}/{self.datatype}/lstm_{self.filename.replace(".csv", "")}_full.png')
 
         fig.data = []

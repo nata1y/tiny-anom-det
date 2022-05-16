@@ -7,11 +7,11 @@ from models.sr.spectral_residual import THRESHOLD, MAG_WINDOW, SCORE_WINDOW, Spe
 from models.statistical_models import SARIMA
 
 models = {
-          'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
-                                    Integer(low=1, high=30, name='MAG_WINDOW'),
-                                    Integer(low=5, high=1000, name='SCORE_WINDOW'),
-                                    Integer(low=1, high=100, name='sensitivity')],
-                 [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
+          # 'sr': (SpectralResidual, [Real(low=0.01, high=1.0001, name='THRESHOLD'),
+          #                           Integer(low=1, high=30, name='MAG_WINDOW'),
+          #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
+          #                           Integer(low=1, high=100, name='sensitivity')],
+          #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
           'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
           'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
                     [1.2, 1.2])

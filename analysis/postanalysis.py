@@ -31,7 +31,6 @@ def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, d
     ax.legend(handles=legend_elements, loc='best')
 
     pyplot.savefig(f'results/imgs/{dataset}/{datatype}/{name}_{filename}.png')
-    pyplot.show()
     pyplot.clf()
     pyplot.close('all')
     plt.close('all')

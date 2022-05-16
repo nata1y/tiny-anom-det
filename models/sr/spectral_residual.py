@@ -130,7 +130,6 @@ class SpectralResidual:
 
         datatest.set_index('timestamp', inplace=True)
 
-        print(self.history.head())
         self.history.set_index('timestamp', inplace=True)
 
         fig.add_trace(go.Scatter(x=self.history.index, y=self.history['score'].tolist(), name='Residual scores'))

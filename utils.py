@@ -367,7 +367,7 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
         if name == 'sarima':
             model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test, drift_windows)
         elif name == 'lstm':
-            model.plot(data_test['timestamp'].tolist(), dataset, type, filename, data_test, drift_windows)
+            model.plot(data_test)
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test, drift_windows)
     except Exception as e:
@@ -393,6 +393,7 @@ def avg_batch_f1():
                         res['sarima-' + suf] = ast.literal_eval(row_sarima[score + '-' + suf])
                         res['lstm-' + suf] = ast.literal_eval(row_lstm[score + '-' + suf])
                         l = []
+                        # TODO: return back
                         plot_change(l, [], 'all', row_sarima['dataset'], dataset, score, suf, res, suf, [])
 
 
