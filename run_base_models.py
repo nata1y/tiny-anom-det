@@ -64,7 +64,7 @@ def fit_base_model(model_params, for_optimization=True):
     start = time.time()
     # create models with hyper-parameters
     if name == 'sarima':
-        model = SARIMA(model_params[0], model_params[1])
+        model = SARIMA(dataset, type, model_params[0], model_params[1])
     elif name == 'lstm':
         model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename.replace(".csv", ""),
                                  magnitude=model_params[0])
@@ -262,32 +262,34 @@ if __name__ == '__main__':
 
                     try:
                         ################ Bayesian optimization ###################################################
-                        if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
-                            print(bo_space)
-                            try:
-                                bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                                                        random_state=3, verbose=True, x0=def_params)
-                            except ValueError as e:
-                                # error is rised when function yields constant value and does not converge
-                                bo_result = mock.Mock()
-                                bo_result.x = def_params
+                        # if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
+                        #     print(bo_space)
+                        #     try:
+                        #         bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                        #                                 random_state=3, verbose=True, x0=def_params)
+                        #     except ValueError as e:
+                        #         # error is rised when function yields constant value and does not converge
+                        #         bo_result = mock.Mock()
+                        #         bo_result.x = def_params
+                        #
+                        #     print(f"Found hyper parameters for {name}: {bo_result.x}")
+                        #
+                        #     if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
+                        #         hp = hp.append({
+                        #             'filename': filename.replace('.csv', ''),
+                        #             'model': name,
+                        #             'hp': bo_result.x
+                        #         }, ignore_index=True)
+                        #
+                        #         hp.to_csv('hyperparams.csv', index=False)
+                        # else:
+                        #     bo_result = mock.Mock()
+                        #     bo_result.x = ast.literal_eval(
+                        #         hp[(hp['filename'] == filename.replace('.csv', ''))
+                        #            & (hp['model'] == name)]['hp'].tolist()[0])
 
-                            print(f"Found hyper parameters for {name}: {bo_result.x}")
-
-                            if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
-                                hp = hp.append({
-                                    'filename': filename.replace('.csv', ''),
-                                    'model': name,
-                                    'hp': bo_result.x
-                                }, ignore_index=True)
-
-                                hp.to_csv('hyperparams.csv', index=False)
-                        else:
-                            bo_result = mock.Mock()
-                            bo_result.x = ast.literal_eval(
-                                hp[(hp['filename'] == filename.replace('.csv', ''))
-                                   & (hp['model'] == name)]['hp'].tolist()[0])
-
+                        bo_result = mock.Mock()
+                        bo_result.x = def_params
                         fit_base_model(bo_result.x, for_optimization=False)
 
                     except Exception as e:

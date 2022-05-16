@@ -365,7 +365,7 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
 
     try:
         if name == 'sarima':
-            model.plot(data_test[['timestamp', 'value']], dataset, type, filename, data_test, drift_windows)
+            model.plot(data_test[['timestamp', 'value']], filename, data_test, drift_windows)
         elif name == 'lstm':
             model.plot(data_test)
         elif name == 'sr':

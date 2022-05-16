@@ -191,7 +191,7 @@ class SARIMA:
         if not in_dp:
             print('not in dp')
             print(pred)
-            #self.full_pred.append(pred)
+            self.full_pred.append(pred)
         else:
             try:
                 pred_point = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.tolist()[1],
@@ -238,8 +238,7 @@ class SARIMA:
 
         return pred_thr[['lower value', 'upper value']]
 
-    def plot(self, y, dataset, datatype, filename, full_test_data, drift_windows):
-        print('plotting....')
+    def plot(self, y, filename, full_test_data, drift_windows):
         y = self._get_time_index(y)
         full_test_data = self._get_time_index(full_test_data)
         y = y.dropna(subset=['value'])
@@ -250,9 +249,9 @@ class SARIMA:
             pred_ci = pred.conf_int()
             if pred_ci.index.max() in y.index or pred_ci.index.min() in y.index:
                 pred.predicted_mean.plot(ax=ax, label=f'Window {idx} forecast', alpha=.7, figsize=(14, 7))
-                ax.fill_between(pred_ci.index,
-                                pred_ci.iloc[:, 0].apply(lambda x: adjust_range(x, 'div', self.conf_bottom)),
-                                pred_ci.iloc[:, 1].apply(lambda x: adjust_range(x, 'mult', self.conf_top)),
+                ax.fill_between(pred_ci.index.tolist(),
+                                pred_ci['lower value'].apply(lambda x: adjust_range(x, 'div', self.conf_bottom)).tolist(),
+                                pred_ci['upper value'].apply(lambda x: adjust_range(x, 'mult', self.conf_top)).tolist(),
                                 color='b', alpha=.2)
 
             for tm, row in pred_ci.iterrows():
@@ -273,7 +272,7 @@ class SARIMA:
         ax.set_xlabel('Date')
         ax.set_ylabel('Values')
         plt.legend()
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/sarima/sarima_{filename.replace(".csv", "")}_full.png')
+        plt.savefig(f'results/imgs/{self.dataset}/{self.datatype}/sarima_{filename.replace(".csv", "")}_full.png')
 
         plt.close('all')
         plt.clf()
