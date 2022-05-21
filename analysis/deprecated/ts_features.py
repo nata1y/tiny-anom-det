@@ -408,6 +408,7 @@ def arch_stat(x: np.array, freq: int = 1,
 
     return {'arch_lm': r_squared}
 
+
 def count_entropy(x: np.array, freq: int = 1) -> Dict[str, float]:
     """Count entropy.
 
@@ -427,6 +428,7 @@ def count_entropy(x: np.array, freq: int = 1) -> Dict[str, float]:
     entropy = -entropy.sum()
 
     return {'count_entropy': entropy}
+
 
 def crossing_points(x: np.array, freq: int = 1) -> Dict[str, float]:
     """Crossing points.
@@ -451,6 +453,7 @@ def crossing_points(x: np.array, freq: int = 1) -> Dict[str, float]:
     cross = (p1 & (~p2)) | (p2 & (~p1))
 
     return {'crossing_points': cross.sum()}
+
 
 def entropy(x: np.array, freq: int = 1, base: float = e) -> Dict[str, float]:
     """Calculates sample entropy.
@@ -1138,11 +1141,10 @@ def _get_feats(index,
 
     if freq is None:
         try:
-            ts.loc[:, 'ds'] = pd.to_datetime(ts['ds'], unit='s')
-            print(ts['ds'])
+            ts.loc[:, 'ds'] = pd.to_datetime(ts['ds'], infer_datetime_format=True)
         except Exception as e:
-            raise e
-        inf_freq = pd.infer_freq(ts['ds'])
+            print(e)
+
         inf_freq = 'M'
         if inf_freq is None:
             raise Exception(
@@ -1150,7 +1152,6 @@ def _get_feats(index,
                 'please provide the frequency using the `freq` argument.'
             )
 
-        freq = 'M'
         dict_freqs = {
             'S': 1,
             'H': 1,
@@ -1165,7 +1166,6 @@ def _get_feats(index,
                 f'Infered frequency: {inf_freq}'
             )
 
-
     if isinstance(ts, pd.DataFrame):
         assert 'y' in ts.columns
         ts = ts['y'].values
@@ -1179,6 +1179,7 @@ def _get_feats(index,
     c_map = ChainMap(*[dict_feat for dict_feat in [func(ts, freq) for func in features]])
 
     return pd.DataFrame(dict(c_map), index = [index])
+
 
 def tsfeatures(ts: pd.DataFrame,
                freq: Optional[int] = None,
@@ -1291,18 +1292,19 @@ def tsfeatures_wide(ts: pd.DataFrame,
     return ts_features
 
 
-def analyse_dataset_fforma(dataset, datatype, root_path):
-    for inp in [(dataset, datatype)]:
+def analyse_dataset_fforma(dataset, root_path):
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    for inp in [dataset]:
         df = pd.DataFrame([])
         data_path = root_path + '/datasets/' + inp[0] + '/' + inp[1] + '/'
         for filename in os.listdir(data_path):
             f = os.path.join(data_path, filename)
             if os.path.isfile(f):
                 data = pd.read_csv(f)
-                data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
-
-                features = tsfeatures(data)
-                df = pd.concat([data, features], ignore_index=True)
                 data.rename(columns={'value': 'y', 'timestamp': 'ds', 'is_anomaly': 'unique_id'}, inplace=True)
+                data['unique_id'] = filename
+                features = tsfeatures(data)
+                df = pd.concat([df, features], ignore_index=True)
 
     return df

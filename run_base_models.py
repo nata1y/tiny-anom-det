@@ -7,7 +7,9 @@ import mock
 from sklearn import preprocessing
 from skopt.callbacks import EarlyStopper
 
-from models.pso_elem.pso_elm_anomaly import PSO_ELM_anomaly, PSO_ELM_anomaly
+from analysis.deprecated.ts_features import analyse_dataset_catch22, analyse_dataset_fforma
+from models.pso_elem.pso_elm_anomaly import PSO_ELM_anomaly
+from models.nets import tf
 from utils import plot_general
 from sklearn.metrics import hamming_loss, cohen_kappa_score
 from skopt import gp_minimize
