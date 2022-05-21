@@ -7,8 +7,6 @@ from numpy import array
 import numpy as np
 import random
 
-random.seed(13)
-
 
 class ECDD():
     def __init__(self, Lambda, w, l):

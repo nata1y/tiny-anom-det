@@ -11,7 +11,7 @@ import numpy as np
 import random
 
 
-class B():
+class B:
     def __init__(self, limite, w, c):
         '''
         Método para criar um modelo do ECDD

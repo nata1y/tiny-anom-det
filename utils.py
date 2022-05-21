@@ -370,6 +370,8 @@ def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, 
             model.plot(data_test)
         elif name == 'sr':
             model.plot(dataset, type, filename, data_test, drift_windows)
+        elif name == 'pso-elm':
+            model.plot(data_test['value'].tolist(), data_test['is_anomaly'].tolist(), filename, dataset, type)
     except Exception as e:
         raise e
 

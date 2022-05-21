@@ -20,9 +20,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 '''
 from models.pso_elem.ferramentas.Janela_deslizante import Janela
-from models.pso_elem.graficos.Graficos_execucao import Grafico
 from models.pso_elem.regressores.IDPSO_ELM import IDPSO_ELM
 from scipy.stats import percentileofscore
+import matplotlib.pyplot as plt
 from models.pso_elem.detectores.B import B
 import time
 import pandas as pd
@@ -71,23 +71,21 @@ class PSO_ELM_anomaly():
         self.error_threshold = error_threshold
 
         self.predictions_df = pd.DataFrame([])
-        self.anomaly_predictions = []
-        self.runtime = 0
         self.magnitude = magnitude
         self.svd_entropies = []
         self.entropy_window = entropy_window
-        self.entropy_threshold = 0
-        self.entropy_differences = []
-        self.drift_occured = False
         self.results = {'fixed': [],
                         'dynamic': []
                         }
-        self.loaded_loss = None
         self.anomalous_batches = []
         self.deteccoes = []
         self.erro_stream = 0
+        self.loss_thresholds = {'fixed': [],
+                                'dynamic': []
+                                }
 
     def train(self, data_train):
+        data_train = data_train['value'].to_numpy()
         self.per_batch_metrics = []
         self.y_true_batch = []
 
@@ -116,8 +114,7 @@ class PSO_ELM_anomaly():
         print(self.traintime)
 
         self.predictions_df['predictions'] = []
-        self.predictions_df['errors-abs'] = []
-        self.predictions_df['errors-pinball'] = []
+        self.predictions_df['errors'] = []
 
         self.janela_train_loss = Janela()
         self.janela_train_loss.Ajustar(self.enxame.dataset[0][:1])
@@ -141,17 +138,21 @@ class PSO_ELM_anomaly():
         # identify no drift for the next iter
         self.mudanca_ocorreu = False
 
-    def test(self, stream):
+    def predict(self, stream):
         '''
         Metodo para executar o procedimento do algoritmo
         :param grafico: variavel booleana para ativar ou desativar o grafico
         :return: retorna 5 variaveis: [falsos_alarmes, atrasos, falta_deteccao, MAPE, tempo_execucao]
         '''
+        stream = stream['value'].to_numpy()
+        try:
+            current_entropy = ant.svd_entropy(stream, normalize=True)
+            extent = stats.percentileofscore(self.svd_entropies, current_entropy) / 100.0
+            extent = 1.5 - max(extent, 1.0 - extent)
+            threshold_adapted = self.error_threshold * extent
+        except:
+            threshold_adapted = self.error_threshold
 
-        current_entropy = ant.svd_entropy(stream, normalize=True)
-        extent = stats.percentileofscore(self.svd_entropies, current_entropy) / 100.0
-        extent = 1.5 - max(extent, 1.0 - extent)
-        threshold_adapted = self.error_threshold * extent
         offset = self.predictions_df.shape[0]
 
         for j in range(len(stream)):
@@ -170,16 +171,19 @@ class PSO_ELM_anomaly():
             }, ignore_index=True)
 
             if self.predictions_df[f'errors'].tolist()[offset+j] > self.error_threshold:
-                self.results[f'fixed'].append(1)
+                self.results['fixed'].append(1)
             else:
-                self.results[f'fixed'].append(0)
+                self.results['fixed'].append(0)
 
             if self.predictions_df[f'errors'].tolist()[offset+j] > threshold_adapted:
-                self.results[f'dynamic'].append(1)
+                self.results['dynamic'].append(1)
             else:
-                self.results[f'dynamic'].append(0)
+                self.results['dynamic'].append(0)
 
-            if self.mudanca_ocorreu is False:
+            self.loss_thresholds['fixed'].append(self.error_threshold)
+            self.loss_thresholds['dynamic'].append(threshold_adapted)
+
+            if not self.mudanca_ocorreu:
 
                 #computando o comportamento para a janela de predicao, para somente uma instancia - media e desvio padrão
                 mudou = self.b.monitorar(self.janela_predicao.dados, stream[j:j+1], self.enxame, j)
@@ -192,7 +196,6 @@ class PSO_ELM_anomaly():
 
                     #variavel para alterar o fluxo, ir para o periodo de retreinamento
                     self.mudanca_ocorreu = True
-                    self.drift_occured = True
 
             else:
 
@@ -222,14 +225,84 @@ class PSO_ELM_anomaly():
                     #variavel para voltar para o loop principal
                     self.mudanca_ocorreu = False
 
-    # def plot(self):
-    #     g = Grafico()
-    #     loss_threshold = 0
-    #     print(self.results)
-    #     g.Plotar_graficos(stream[:len(self.results['0.01-0.1-abs'])], self.labels[:len(self.results['0.01-0.1-abs'])],
-    #                       self.results['0.01-0.1-abs'],
-    #                       self.predictions_df['predictions'].tolist(),
-    #                       deteccoes, alarmes, self.predictions_df['errors-pinball'].tolist(), self.n, atrasos,
-    #                       falsos_alarmes, tempo_execucao, loss_threshold, loss_thresholds, MAE, nome=self.tecnica,
-    #                       ts=ts, anomalous_batches=self.anomalous_batches)
+        return self.results['fixed'][-len(stream):], self.results['dynamic'][-len(stream):]
+
+    def plot(self, stream, labels, ts, dataset, datatype, threshold_type='dynamic'):
+        MAE = self.erro_stream / len(stream)
+        largura_deteccoes = 2
+
+        localizacao_legenda = (1.13, 0.85)
+
+        eixox = [0, len(stream)]
+        erro_eixoy = [0, 0.2]
+        x_intervalos = range(eixox[0], eixox[1], 900)
+
+        # criando uma figura
+        figura = plt.figure()
+        figura.suptitle('PSO-ELM', fontsize=11, fontweight='bold')
+
+        # definindo a figura 1 com a previsao e os dados reais
+        grafico1 = figura.add_subplot(2, 10, (1, 9))
+        grafico1.plot(stream, label='Original Serie', color='blue')
+        grafico1.plot(self.predictions_df['predictions'], label='Forecast', color='red')
+
+        if not MAE:
+            grafico1.set_title("Real dataset and forecast")
+        else:
+            grafico1.set_title("Real dataset and forecast | MAE: %.3f |" % (MAE))
+
+        grafico1.axvline(-1000, linewidth=largura_deteccoes,
+                         linestyle='dashed', label='Anomaly Batch', color='orange')
+        for i in range(len(self.anomalous_batches)):
+            contador = self.anomalous_batches[i]
+            grafico1.axvline(contador,
+                             linewidth=largura_deteccoes, linestyle='dashed', color='green')
+
+        # colocando legenda e definindo os eixos do grafico
+        plt.ylabel('Observations')
+        plt.xlabel('Time')
+        grafico1.axis([eixox[0], eixox[1],
+                       min(np.min(stream), np.min(self.predictions_df['predictions'])) - .05,
+                       max(np.max(stream), np.max(self.predictions_df['predictions'])) + .05])
+        offset = len(stream) - len(labels)
+        grafico1.legend(loc='best', bbox_to_anchor=localizacao_legenda, ncol=1,
+                        fancybox=True, shadow=True)
+        plt.xticks(x_intervalos, rotation=45)
+
+        # definindo a figura 2 com o erro de previsao
+        grafico2 = figura.add_subplot(3, 10, (21, 29))
+        grafico2.plot(self.predictions_df['errors'],
+                      label='Forecasting Error', color='blue', zorder=1)
+        grafico2.plot(list(range(len(self.loss_thresholds[threshold_type]))),
+                      self.loss_thresholds[threshold_type], linewidth=largura_deteccoes,
+                      linestyle='dashed', color='m', label='Loss threshold')
+        grafico2.set_title("Forecasting Error")
+
+        grafico2.axvline(-1000, linewidth=largura_deteccoes,
+                         linestyle='dashed', label='Anomaly Batch', color='green')
+        for i in range(len(self.anomalous_batches)):
+            contador = self.anomalous_batches[i]
+            grafico2.axvline(contador, linewidth=largura_deteccoes, linestyle='dashed', color='green')
+
+        fp_idx = [offset + x for x in range(len(labels))
+                  if labels[x] == 0 and self.results[threshold_type][x] == 1]
+        fn_idx = [offset + x for x in range(len(labels))
+                  if labels[x] == 1 and self.results[threshold_type][x] == 0]
+
+        grafico2.scatter(x=fp_idx, y=[self.predictions_df['errors'][i]
+                                      for i in fp_idx], label='FP', color='crimson', s=15,
+                         zorder=10)
+        grafico2.scatter(x=fn_idx, y=[self.predictions_df['errors'][i]
+                                      for i in fn_idx], label='FN', color='y', s=15, zorder=10)
+
+        plt.ylabel('MAE')
+        plt.xlabel('Time')
+        grafico2.legend(loc='best',
+                        ncol=1, fancybox=True, shadow=True)
+        grafico2.axis([eixox[0], eixox[1], erro_eixoy[0],
+                       max(np.max(self.predictions_df['errors']) + 0.05,
+                           np.max(self.loss_thresholds[threshold_type]) + 0.05)])
+        plt.xticks(x_intervalos, rotation=45)
+
+        plt.savefig(f'results/imgs/{dataset}/{datatype}/pso-elm_{ts.replace(".csv", "")}_full.png')
 

@@ -7,7 +7,7 @@ import mock
 from sklearn import preprocessing
 from skopt.callbacks import EarlyStopper
 
-from models.pso_elem.pso_elm_anomaly import IDPSO_ELM_B_anomaly, PSO_ELM_anomaly
+from models.pso_elem.pso_elm_anomaly import PSO_ELM_anomaly, PSO_ELM_anomaly
 from utils import plot_general
 from sklearn.metrics import hamming_loss, cohen_kappa_score
 from skopt import gp_minimize
@@ -95,10 +95,16 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'sr':
-        model = SpectralResidual(series=data_train[['value', 'timestamp']], threshold=model_params[0], mag_window=model_params[1],
+        model = SpectralResidual(series=data_train[['value', 'timestamp']],
+                                 threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
                                  detect_mode=DetectMode.anomaly_only, dataset=dataset, datatype=type)
         model.fit()
+    elif name == 'pso-elm':
+        model = PSO_ELM_anomaly(n=model_params[0], magnitude=model_params[1], error_threshold=model_params[2])
+        model.train(data_train[-model.n:])
+    else:
+        exit(f'Sorry! Model {name} is not from the collection.')
 
     end = time.time()
     traintime = end - start
@@ -133,29 +139,21 @@ def fit_base_model(model_params, for_optimization=True):
 
                 elif name == 'sr':
                     model.__series__ = data_in_memory[['value', 'timestamp']]
-                    if model.dynamic_threshold:
-                        try:
-                            res = model.detect_dynamic_threshold(data_in_memory[['value', 'timestamp']])
-                            # update dynamic threshold here
-                            y_pred_noe = [1 if x else 0 for x in res['isAnomaly'].tolist()]
+                    try:
+                        res = model.detect_dynamic_threshold(data_in_memory[['value', 'timestamp']])
+                        y_pred_noe = [1 if x else 0 for x in res['isAnomaly'].tolist()]
 
-                            y_pred_e = [1 if x else 0 for x in res['isAnomaly_e'].tolist()]
-                        except Exception as e:
-                            y_pred_noe = [0 for _ in range(window.shape[0])]
-                            y_pred_e = [0 for _ in range(window.shape[0])]
-                    else:
-                        try:
-                            y_pred = [1 if x else 0 for x in model.detect(anomaly_window)
-                                                             ['isAnomaly'].tolist()[-len(y):]]
-                        except Exception as e:
-                            y_pred = [0 for _ in range(window.shape[0])]
+                        y_pred_e = [1 if x else 0 for x in res['isAnomaly_e'].tolist()]
+                    except Exception as e:
+                        y_pred_noe = [0 for _ in range(window.shape[0])]
+                        y_pred_e = [0 for _ in range(window.shape[0])]
 
                 elif name == 'lstm':
                     y_pred_noe, y_pred_e = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1),
                                            window['timestamp'])
                     y_pred_noe, y_pred_e = y_pred_noe[:window.shape[0]], y_pred_e[:window.shape[0]]
-                else:
-                    y_pred = model.predict(window[['value', 'timestamp']])
+                elif name == 'pso-elm':
+                    y_pred_noe, y_pred_e = model.predict(window[['value', 'timestamp']])
 
                 idx += 1
                 y_pred_total_noe += [0 if val != 1 else 1 for val in funcy.lflatten(y_pred_noe)][:window.shape[0]]

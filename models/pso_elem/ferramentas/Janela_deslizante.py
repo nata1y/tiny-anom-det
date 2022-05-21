@@ -5,7 +5,6 @@ Created on 6 de fev de 2017
 @author: gusta
 '''
 import numpy as np
-from models.pso_elem.ferramentas.Importar_dataset import Datasets
 
 
 class Janela():
@@ -80,79 +79,3 @@ class Janela():
     
     def Zerar_Janela(self):
         self.dados = []
-        
-def main():
-    dtst = Datasets()
-    dataset = dtst.Leitura_dados(dtst.bases_linear_abruptas(1, 30))
-    
-    
-    janela = Janela()
-    janela.Ajustar(dataset[1:4])
-    for i in range(5):
-        janela.Add_janela(10)
-        print(type(janela.dados))
-        print(janela.dados)
-    
-    print("---------------------------------------------")
-    
-    janela2 = Janela()
-    janela2.Ajustar(dataset[1:4])
-    for i in range(5):
-        janela2.Add_janela(10)
-        print(type(janela2.dados))
-        print(janela2.dados)
-    
-       
-    '''
-    janela = Janela()
-    janela.Ajustar(dataset)
-    start_time = time.time()
-    for i in range(50):
-        janela.Add_janela(10)
-    print((time.time()-start_time))
-    
-    janela2 = Janela()
-    janela2.Ajustar(dataset)
-    start_time = time.time()
-    for i in range(50):
-        janela2.Fila_Add2(10)
-        #print(janela2.dados)
-    print((time.time()-start_time))
-    '''
-    
-    '''
-    start_time = time.time()
-    for i in range(50):
-        janela.Increment_Add(10)
-    print((time.time()-start_time))
-    print(janela.dados)
-
-    janela2 = Janela()
-    janela2.Ajustar(dataset[1:5])
-    
-    start_time = time.time()
-    for i in range(50):
-        janela2.Increment_Add2(10)
-    print((time.time()-start_time))
-    print(janela2.dados)
-    '''
-    
-    '''
-    janela = Janela()
-    janela.Ajustar(dataset[1:5])
-    print(janela.dados)
-    janela.Add_janela(10)
-    print(janela.dados)
-    janela.Increment_Add(10)
-    print(janela.dados)
-    janela.Zerar_Janela()
-    print(janela.dados)
-    janela.Increment_Add(10)
-    print(janela.dados)
-    '''
-    
-    
-if __name__ == "__main__":
-    main() 
-        
-        
