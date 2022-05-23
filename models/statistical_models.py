@@ -3,11 +3,13 @@ import datetime
 import itertools
 import numpy as np
 from scipy import stats
+from sklearn.metrics import mean_absolute_error
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import pandas as pd
 import matplotlib.pyplot as plt
 import antropy as ant
 
+from drift_detectors.ECDD import ECDD
 from settings import entropy_params
 from utils import adjust_range
 
@@ -75,8 +77,6 @@ class SARIMA:
         self.form_entropy(data)
         data = data[-5000:]
         period = 12
-        # period = periodicity_analysis(data, self.dataset)
-        print(data)
 
         if dataset != 'retrain':
             self.dataset = dataset
@@ -115,8 +115,10 @@ class SARIMA:
                     print(e)
 
         self.model = self.model.fit()
-        # print(self.model.summary())
+        loss = [abs(x - y) for x, y in zip(data['value'].tolist(), self.model.get_prediction().predicted_mean)]
+        print('***', loss)
         # self.latest_train_snippest = data
+        self.drift_detector.record(np.mean(loss), np.std(loss))
 
     def form_entropy(self, data):
         collected_entropies = []
@@ -213,8 +215,12 @@ class SARIMA:
 
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
-                error = pred.predicted_mean.loc[idx, 'value'] - newdf.loc[idx, 'value']
-                self.drift_detector.update_ewma(error=error, t=idx)
+                if not isinstance(idx, int):
+                    t = datetime.datetime.strptime(str(idx), '%Y-%m-%d %H:%M:%S').timestamp()
+                else:
+                    t = idx
+                error = abs(newdf.loc[idx, 'value'] - pred.predicted_mean.loc[idx])
+                self.drift_detector.update_ewma(error=error, t=t)
                 response = self.drift_detector.monitor()
                 if response == self.drift_detector.drift:
                     self.drift_alerting_cts += 1
@@ -239,8 +245,7 @@ class SARIMA:
                     else:
                         y_pred_e.append(1)
 
-        # self.latest_train_snippest = pd.concat([self.latest_train_snippest, deanomalized_window])[-self.train_size:]
-
+        # self.latest_train_snippest = pd.concat([self.latest_train_snippest, newdf])[-self.train_size:]
         print('round done')
 
         return y_pred, y_pred_e

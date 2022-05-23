@@ -120,7 +120,11 @@ class SpectralResidual:
 
         result = self.__anomaly_frame
         for idx, row in result.iterrows():
-            self.drift_detector.update_ewma(error=row['score'], t=row[''])
+            if isinstance(row['timestamp'], str):
+                t = datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S').timestamp()
+            else:
+                t = row['timestamp']
+            self.drift_detector.update_ewma(error=row['score'], t=t)
             response = self.drift_detector.monitor()
             if response == self.drift_detector.drift:
                 self.drift_alerting_cts += 1
@@ -137,6 +141,7 @@ class SpectralResidual:
             result['isAnomaly_e'] = result['isAnomaly']
 
         self.history = self.history.append(result[-self.entropy_window:], ignore_index=True)
+        print(self.history)
         return result[-self.entropy_window:]
 
     def plot(self, dataset, datatype, filename, datatest, drift_windows):

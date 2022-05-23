@@ -1,4 +1,5 @@
 # fromhttps://towardsdatascience.com/time-series-of-price-anomaly-detection-with-lstm-11a12ba4f6d9
+from datetime import datetime
 
 import funcy
 import numpy as np
@@ -71,9 +72,9 @@ class LSTM_autoencoder:
                                self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
         self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
                            self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
-        print(self.boundary_up, self.boundary_bottom)
-        loss = np.abs(Xf - self.history).ravel()[:Xf.shape[1]]
-        self.drift_detector.record(np.mean(loss), np.std(loss))
+
+        self.drift_detector.record(np.mean(self.history.history['loss']),
+                                   np.std(self.history.history['loss']))
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -95,6 +96,9 @@ class LSTM_autoencoder:
         loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
 
         for error, t in zip(loss, timestamp):
+            if isinstance(t, str):
+                t = datetime.strptime(t, '%Y-%m-%d %H:%M:%S').timestamp()
+
             self.drift_detector.update_ewma(error=error, t=t)
             response = self.drift_detector.monitor()
             if response == self.drift_detector.drift:
@@ -102,6 +106,7 @@ class LSTM_autoencoder:
             if self.drift_alerting_cts == self.drift_count_limit:
                 # TODO: retrain
                 pass
+            print('**', response)
 
         y_pred1 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
         if self.boundary_bottom <= entropy <= self.boundary_up:
