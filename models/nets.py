@@ -14,6 +14,7 @@ from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDist
 from tensorflow.keras.models import Sequential
 import antropy as ant
 
+from drift_detectors.ECDD import ECDD
 from settings import entropy_params
 
 print(f'Running on GPU {tf.test.is_built_with_cuda()}. Devices: {tf.config.list_physical_devices("GPU")}')
@@ -23,7 +24,8 @@ class LSTM_autoencoder:
     model = None
     loss = []
 
-    def __init__(self, X_shape, dataset, datatype, filename, magnitude=1.5):
+    def __init__(self, X_shape, dataset, datatype, filename, magnitude=1.5,
+                 w=0.25, c=0.25, drift_count_limit=10):
 
         self.model = Sequential()
         self.model.add(LSTM(128, input_shape=(X_shape[0], X_shape[1])))
@@ -43,6 +45,10 @@ class LSTM_autoencoder:
         self.predicted = []
         self.window = X_shape[0]
         self.entr_factor = entropy_params[f'{dataset}_{datatype}']['factor']
+        self.drift_detector = ECDD(0.2, w, c)
+        self.is_drift = False
+        self.drift_alerting_cts = 0
+        self.drift_count_limit = drift_count_limit
 
     def fit(self, X_train, y_train, timestamp, Xf):
         self.history = self.model.fit(X_train, y_train, epochs=100, batch_size=32,
@@ -66,6 +72,8 @@ class LSTM_autoencoder:
         self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
                            self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
         print(self.boundary_up, self.boundary_bottom)
+        loss = np.abs(Xf - self.history).ravel()[:Xf.shape[1]]
+        self.drift_detector.record(np.mean(loss), np.std(loss))
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -85,6 +93,15 @@ class LSTM_autoencoder:
         Xf = np.array(Xf).reshape((1, self.window, 1))
         prediction = self.model.predict(Xf)
         loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
+
+        for error, t in zip(loss, timestamp):
+            self.drift_detector.update_ewma(error=error, t=t)
+            response = self.drift_detector.monitor()
+            if response == self.drift_detector.drift:
+                self.drift_alerting_cts += 1
+            if self.drift_alerting_cts == self.drift_count_limit:
+                # TODO: retrain
+                pass
 
         y_pred1 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
         if self.boundary_bottom <= entropy <= self.boundary_up:

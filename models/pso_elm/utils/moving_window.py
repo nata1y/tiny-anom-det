@@ -7,30 +7,30 @@ Created on 6 de fev de 2017
 import numpy as np
 
 
-class Janela():
+class MowingWindow:
     def __init__(self):
         '''
         Classe para instanciar a janela deslizante 
         '''
-        self.dados = []
-        self.dados_mais = []
+        self.data = []
+        self.rest_data = []
         
-    def Ajustar(self, valores):
+    def adjust(self, values):
         '''
         Metodo para ajustar o tamanho da jenela deslizante 
-        :param valores: valores para serem inseridos na janela
+        :param values: valores para serem inseridos na janela
         '''
         
-        self.dados = valores
-        self.dados_mais = np.append([0], valores)
+        self.data = values
+        self.rest_data = np.append([0], values)
     
     def Add_janela(self, valor):
         '''
         Metodo para inserir na janela deslizante, o valor mais antigo sera excluido 
         :param valor: valor de entrada
         '''
-        self.dados = self.Fila(self.dados, valor)
-        self.dados_mais = self.Fila(self.dados_mais, valor)
+        self.data = self.Fila(self.data, valor)
+        self.rest_data = self.Fila(self.rest_data, valor)
         
     def Fila(self, lista, valor):
         '''
@@ -68,14 +68,14 @@ class Janela():
         :param valor: valor de entrada
         '''
         
-        if(len(self.dados) > 0):
-            aux = np.asarray(self.dados)
-            aux = [0] * (len(self.dados)+1)
-            aux[:len(self.dados)] = self.dados
-            aux[len(self.dados)] = valor
-            self.dados = aux
+        if len(self.data) > 0:
+            aux = np.asarray(self.data)
+            aux = [0] * (len(self.data) + 1)
+            aux[:len(self.data)] = self.data
+            aux[len(self.data)] = valor
+            self.data = aux
         else:
-            self.dados.append(valor)
+            self.data.append(valor)
     
     def Zerar_Janela(self):
-        self.dados = []
+        self.data = []

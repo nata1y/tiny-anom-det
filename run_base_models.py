@@ -8,7 +8,7 @@ from sklearn import preprocessing
 from skopt.callbacks import EarlyStopper
 
 from analysis.deprecated.ts_features import analyse_dataset_catch22, analyse_dataset_fforma
-from models.pso_elem.pso_elm_anomaly import PSO_ELM_anomaly
+from models.pso_elm.pso_elm_anomaly import PSO_ELM_anomaly
 from models.nets import tf
 from utils import plot_general
 from sklearn.metrics import hamming_loss, cohen_kappa_score
@@ -97,19 +97,26 @@ def fit_base_model(model_params, for_optimization=True):
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'sr':
+        start_time = time.time()
         model = SpectralResidual(series=data_train[['value', 'timestamp']],
                                  threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
                                  detect_mode=DetectMode.anomaly_only, dataset=dataset, datatype=type)
         model.fit()
+        end_time = time.time()
+
+        diff = end_time - start_time
+        print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'pso-elm':
+        start_time = time.time()
         model = PSO_ELM_anomaly(n=model_params[0], magnitude=model_params[1], error_threshold=model_params[2])
         model.train(data_train[-model.n:])
+        end_time = time.time()
+
+        diff = end_time - start_time
+        print(f"Trained model {name} on {filename} for {diff}")
     else:
         exit(f'Sorry! Model {name} is not from the collection.')
-
-    end = time.time()
-    traintime = end - start
 
     batch_metrices_kc = []
     batch_metrices_kc_entropy = []

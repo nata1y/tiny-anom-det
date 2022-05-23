@@ -5,8 +5,8 @@ import copy
 import pandas as pd
 import matplotlib.pyplot as plt
 from numpy import array
-from models.pso_elem.ferramentas.Particionar_series import Particionar_series
-from models.pso_elem.regressores.ELM import ELMRegressor
+from models.pso_elm.utils.partition_series import Particionar_series
+from models.pso_elm.regressors.ELM import ELMRegressor
 from sklearn.metrics import mean_absolute_error
 
 
@@ -56,7 +56,7 @@ class IDPSO_ELM():
         self.numero_dimensoes =  self.linhas * qtd_neuronios
         
         self.iteracoes = 1000
-        self.numero_particulas = 30
+        self.num_particles = 30
         self.inercia = 0.5
         self.inercia_final = 0.3
         self.c1 = 2.4
@@ -65,16 +65,16 @@ class IDPSO_ELM():
         self.particulas = []
         self.gbest = []
         
-        self.particulas_ordenadas = [0] * self.numero_particulas
-        self.sensores = [0] * self.numero_particulas
+        self.particulas_ordenadas = [0] * self.num_particles
+        self.sensores = [0] * self.num_particles
         
         self.tx_espalhar = 0
         
-    def Parametros_IDPSO(self, iteracoes, numero_particulas, inercia_inicial, inercia_final, c1, c2, Xmax, crit_parada):
+    def Parametros_IDPSO(self, iteracoes, num_particles, inercia_inicial, inercia_final, c1, c2, Xmax, crit_parada):
         '''
         Metodo para alterar os parametros basicos do IDPSO 
         :param iteracoes: quantidade de geracoes para o treinamento 
-        :param numero_particulas: quantidade de particulas usadas para treinamento
+        :param num_particles: quantidade de particulas usadas para treinamento
         :param inercia: inercial inicial para treinamento
         :param inercia_final: inercia final para variacao
         :param c1: coeficiente cognitivo
@@ -83,15 +83,15 @@ class IDPSO_ELM():
         '''
         
         self.iteracoes = iteracoes
-        self.numero_particulas = numero_particulas
+        self.num_particles = num_particles
         self.inercia_inicial = inercia_inicial
         self.inercia_final = inercia_final
         self.c1 = c1
         self.c2 = c2
         self.crit_parada = crit_parada
         
-        self.particulas_ordenadas = [0] * self.numero_particulas
-        self.sensores = [0] * self.numero_particulas
+        self.particulas_ordenadas = [0] * self.num_particles
+        self.sensores = [0] * self.num_particles
         
         self.xmax = Xmax
         self.xmin = -Xmax
@@ -136,7 +136,7 @@ class IDPSO_ELM():
         grafico = []
         lista_MSE = []
         
-        for i in range(self.numero_particulas):
+        for i in range(self.num_particles):
             p = Particulas()
             p.posicao = np.random.randn(1, self.numero_dimensoes)
             p.posicao = p.posicao[0]

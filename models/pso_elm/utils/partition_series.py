@@ -56,7 +56,7 @@ class Particionar_series:
         
     def Part_train(self):
         '''
-        metodo que retorna somente a parte de treinamento da serie temporal
+        method that returns only the training part of the time series
         :return: retorna uma lista com: [entrada_train, saida_train]
         '''
         

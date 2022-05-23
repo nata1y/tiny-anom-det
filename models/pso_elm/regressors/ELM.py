@@ -7,7 +7,7 @@ Created on 31 de jan de 2017
 
 import numpy as np
 from sklearn.metrics import mean_absolute_error
-from models.pso_elem.ferramentas.Particionar_series import Particionar_series
+from models.pso_elm.utils.partition_series import Particionar_series
 import matplotlib.pyplot as plt
 
 

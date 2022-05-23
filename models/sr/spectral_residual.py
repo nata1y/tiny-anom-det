@@ -29,6 +29,7 @@ import pandas as pd
 import antropy as ant
 from scipy import stats
 
+from drift_detectors.ECDD import ECDD
 from models.sr.msanomalydetector.util import *
 import models.sr.msanomalydetector.boundary_utils as boundary_helper
 import plotly.graph_objects as go
@@ -39,7 +40,7 @@ from settings import anomaly_window, entropy_params, data_in_memory_sz
 class SpectralResidual:
     def __init__(self, series, threshold, mag_window, score_window,
                  sensitivity, detect_mode, dataset,
-                 datatype, batch_size=32):
+                 datatype, batch_size=32, w=0.25, c=0.25, drift_count_limit=10):
         self.__series__ = series
         self.__values__ = self.__series__['value'].tolist()
         self.__threshold__ = threshold
@@ -60,6 +61,10 @@ class SpectralResidual:
         self.dataset = dataset
         self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
+        self.drift_detector = ECDD(0.2, w, c)
+        self.is_drift = False
+        self.drift_alerting_cts = 0
+        self.drift_count_limit = drift_count_limit
 
     def fit(self):
         self.svd_entropies = []
@@ -84,6 +89,7 @@ class SpectralResidual:
         print(self.boundary_up, self.boundary_bottom)
 
         result = self.__anomaly_frame
+        self.drift_detector.record(np.mean(result['score']), np.std(result['score']))
         return result
 
     def _g(self, x1, y1, x2, y2):
@@ -113,6 +119,14 @@ class SpectralResidual:
             entropy = (self.boundary_bottom + self.boundary_up) / 2
 
         result = self.__anomaly_frame
+        for idx, row in result.iterrows():
+            self.drift_detector.update_ewma(error=row['score'], t=row[''])
+            response = self.drift_detector.monitor()
+            if response == self.drift_detector.drift:
+                self.drift_alerting_cts += 1
+            if self.drift_alerting_cts == self.drift_count_limit:
+                # TODO: retrain
+                pass
 
         if entropy < self.boundary_bottom or entropy > self.boundary_up:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0

@@ -14,7 +14,8 @@ from utils import adjust_range
 
 class SARIMA:
 
-    def __init__(self, dataset, datatype, conf_top=1.5, conf_bottom=1.5, train_size=3000):
+    def __init__(self, dataset, datatype, conf_top=1.5, conf_bottom=1.5,
+                 train_size=3000, w=0.25, c=0.25, drift_count_limit=10):
         self.full_pred = []
         self.mean_fluctuation = []
         self.monitoring_pred = []
@@ -30,6 +31,10 @@ class SARIMA:
         self.dataset = dataset
         self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
+        self.drift_detector = ECDD(0.2, w, c)
+        self.is_drift = False
+        self.drift_alerting_cts = 0
+        self.drift_count_limit = drift_count_limit
 
     def _check_freq(self, idx):
         if self.freq:
@@ -208,6 +213,15 @@ class SARIMA:
 
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
+                error = pred.predicted_mean.loc[idx, 'value'] - newdf.loc[idx, 'value']
+                self.drift_detector.update_ewma(error=error, t=idx)
+                response = self.drift_detector.monitor()
+                if response == self.drift_detector.drift:
+                    self.drift_alerting_cts += 1
+                if self.drift_alerting_cts == self.drift_count_limit:
+                    # TODO: retrain
+                    pass
+
                 if adjust_range(row['lower value'], 'div', self.conf_bottom) <= newdf.loc[idx, 'value'] \
                         <= adjust_range(row['upper value'], 'mult', self.conf_top):
                     y_pred.append(0)

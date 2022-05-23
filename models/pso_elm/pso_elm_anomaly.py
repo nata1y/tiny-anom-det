@@ -19,17 +19,15 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 '''
-from models.pso_elem.ferramentas.Janela_deslizante import Janela
-from models.pso_elem.regressores.IDPSO_ELM import IDPSO_ELM
-from scipy.stats import percentileofscore
+from models.pso_elm.utils.moving_window import MowingWindow
+from models.pso_elm.regressors.IDPSO_ELM import IDPSO_ELM
 import matplotlib.pyplot as plt
-from models.pso_elem.detectores.B import B
+from drift_detectors.B import B
 import time
 import pandas as pd
 import numpy as np
 import antropy as ant
 from scipy import stats
-import random
 from sklearn.metrics import mean_absolute_error
 
 
@@ -45,7 +43,7 @@ divisao_dataset = [0.8, 0.2, 0]
 
 
 class PSO_ELM_anomaly():
-    def __init__(self, n=500, lags=5, qtd_neuronios=10, numero_particulas=10, limite=10, w=0.25, c=0.25,
+    def __init__(self, n=500, lags=5, qtd_neuronios=10, num_particles=10, limite=10, w=0.25, c=0.25,
                  magnitude=5, entropy_window=100, error_threshold=0.1):
         '''
         construtor do algoritmo que detecta a mudanca de ambiente por meio do comportamento das particulas
@@ -55,7 +53,7 @@ class PSO_ELM_anomaly():
         :param n: tamanho do n para reavaliar o metodo de deteccao
         :param lags: quantidade de lags para modelar as entradas da RNA
         :param qtd_neuronios: quantidade de neuronios escondidos da RNA
-        :param numero_particulas: numero de particulas para serem usadas no IDPSO
+        :param num_particles: numero de particulas para serem usadas no IDPSO
         :param n_particulas_comportamento: numero de particulas para serem monitoradas na detecccao de mudanca
         :param limite: contador para verificar a mudanca
         '''
@@ -63,7 +61,7 @@ class PSO_ELM_anomaly():
         self.n = n
         self.lags = lags
         self.qtd_neuronios = qtd_neuronios
-        self.numero_particulas = numero_particulas
+        self.num_particles = num_particles
 
         self.limite = limite
         self.w = w
@@ -92,22 +90,22 @@ class PSO_ELM_anomaly():
         start_time = time.time()
         # criando e treinando um enxame_vigente para realizar as previsões
         self.enxame = IDPSO_ELM(data_train, divisao_dataset, self.lags, self.qtd_neuronios)
-        self.enxame.Parametros_IDPSO(it, self.numero_particulas, inercia_inicial, inercia_final, c1, c2, xmax, crit_parada)
+        self.enxame.Parametros_IDPSO(it, self.num_particles, inercia_inicial, inercia_final, c1, c2, xmax, crit_parada)
         self.enxame.Treinar()
 
         # ajustando com os dados finais do treinamento a janela de predicao
-        self.janela_predicao = Janela()
-        self.janela_predicao.Ajustar(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
-        self.predicao = self.enxame.Predizer(self.janela_predicao.dados)
+        self.janela_predicao = MowingWindow()
+        self.janela_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
+        self.predicao = self.enxame.Predizer(self.janela_predicao.data)
 
         # janela com o atual conceito, tambem utilizada para armazenar os dados de retreinamento
-        self.janela_caracteristicas = Janela()
-        self.janela_caracteristicas.Ajustar(data_train)
+        self.janela_caracteristicas = MowingWindow()
+        self.janela_caracteristicas.adjust(data_train)
 
         # ativando o sensor de comportamento de acordo com a
         # primeira janela de caracteristicas para media e desvio padrão
         self.b = B(self.limite, self.w, self.c)
-        self.b.armazenar_conceito(self.janela_caracteristicas.dados, self.lags, self.enxame)
+        self.b.record(self.janela_caracteristicas.data, self.lags, self.enxame)
         end_time = time.time()
 
         self.traintime = end_time - start_time
@@ -116,8 +114,8 @@ class PSO_ELM_anomaly():
         self.predictions_df['predictions'] = []
         self.predictions_df['errors'] = []
 
-        self.janela_train_loss = Janela()
-        self.janela_train_loss.Ajustar(self.enxame.dataset[0][:1])
+        self.janela_train_loss = MowingWindow()
+        self.janela_train_loss.adjust(self.enxame.dataset[0][:1])
 
         for start in range(0, len(data_train), self.entropy_window):
             try:
@@ -163,7 +161,7 @@ class PSO_ELM_anomaly():
             self.janela_predicao.Add_janela(stream[j])
 
             # realizando a nova predicao com a nova janela de predicao
-            predicao = self.enxame.Predizer(self.janela_predicao.dados)
+            predicao = self.enxame.Predizer(self.janela_predicao.data)
 
             self.predictions_df = self.predictions_df.append({
                 'predictions': predicao,
@@ -186,7 +184,7 @@ class PSO_ELM_anomaly():
             if not self.mudanca_ocorreu:
 
                 #computando o comportamento para a janela de predicao, para somente uma instancia - media e desvio padrão
-                mudou = self.b.monitorar(self.janela_predicao.dados, stream[j:j+1], self.enxame, j)
+                mudou = self.b.monitor(self.janela_predicao.data, stream[j:j + 1], self.enxame, j)
 
                 if mudou:
                     self.deteccoes.append(j)
@@ -199,28 +197,28 @@ class PSO_ELM_anomaly():
 
             else:
 
-                if len(self.janela_caracteristicas.dados) < self.n:
+                if len(self.janela_caracteristicas.data) < self.n:
                     #adicionando a nova instancia na janela de caracteristicas
                     self.janela_caracteristicas.Increment_Add(stream[j])
 
                 else:
                     #atualizando o enxame_vigente preditivo
-                    self.enxame = IDPSO_ELM(self.janela_caracteristicas.dados,
+                    self.enxame = IDPSO_ELM(self.janela_caracteristicas.data,
                                             divisao_dataset, self.lags,
                                             self.qtd_neuronios)
-                    self.enxame.Parametros_IDPSO(it, self.numero_particulas,
+                    self.enxame.Parametros_IDPSO(it, self.num_particles,
                                                  inercia_inicial, inercia_final,
                                                  c1, c2, xmax, crit_parada)
                     self.enxame.Treinar()
 
                     #ajustando com os dados finais do treinamento a janela de predicao
-                    self.janela_predicao = Janela()
-                    self.janela_predicao.Ajustar(self.enxame.dataset[0][(len(self.enxame.dataset[0])-1):])
-                    self.predicao = self.enxame.Predizer(self.janela_predicao.dados)
+                    self.janela_predicao = MowingWindow()
+                    self.janela_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
+                    self.predicao = self.enxame.Predizer(self.janela_predicao.data)
 
                     # atualizando o conceito para a caracteristica de comportamento
                     self.b = B(self.limite, self.w, self.c)
-                    self.b.armazenar_conceito(self.janela_caracteristicas.dados, self.lags, self.enxame)
+                    self.b.record(self.janela_caracteristicas.data, self.lags, self.enxame)
 
                     #variavel para voltar para o loop principal
                     self.mudanca_ocorreu = False
