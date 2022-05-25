@@ -1,6 +1,8 @@
 # twist on https://github.com/RuoyunCarina-D/Anomly-Detection-SARIMA/blob/master/SARIMA.py
 import datetime
 import itertools
+import time
+
 import numpy as np
 from scipy import stats
 from sklearn.metrics import mean_absolute_error
@@ -33,6 +35,8 @@ class SARIMA:
         self.dataset = dataset
         self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
+        self.w = w
+        self.c = c
         self.drift_detector = ECDD(0.2, w, c)
         self.is_drift = False
         self.drift_alerting_cts = 0
@@ -55,10 +59,8 @@ class SARIMA:
             # preprocessing depending on TS.....
             data.set_index('timestamp', inplace=True)
             data = data[~data.index.duplicated(keep='first')]
-
             self.freq = self._check_freq(data.index)
-            data = data.asfreq(self.freq)
-
+            data = data.asfreq(self.freq, method='ffill')
             return data
         if self.dataset in ['kpi']:
             try:
@@ -74,13 +76,12 @@ class SARIMA:
             return data
 
     def fit(self, data, dataset):
-        self.form_entropy(data)
-        data = data[-5000:]
-        period = 12
-
         if dataset != 'retrain':
+            self.form_entropy(data)
             self.dataset = dataset
             data = self._get_time_index(data)
+        data = data[-5000:]
+        period = 12
 
         # define the p, d and q parameters to take any value between 0 and 2
         p = d = q = range(0, 2)
@@ -116,9 +117,10 @@ class SARIMA:
 
         self.model = self.model.fit()
         loss = [abs(x - y) for x, y in zip(data['value'].tolist(), self.model.get_prediction().predicted_mean)]
-        print('***', loss)
-        # self.latest_train_snippest = data
         self.drift_detector.record(np.mean(loss), np.std(loss))
+        print(data.tail())
+        print(self.model.fittedvalues.tail())
+        print('=======')
 
     def form_entropy(self, data):
         collected_entropies = []
@@ -145,9 +147,9 @@ class SARIMA:
         y_pred = []
         y_pred_e = []
         newdf = self._get_time_index(newdf)
+        print(newdf.head())
+        print('))))))))))))))))))))))))')
 
-        print(self.model.fittedvalues)
-        print(newdf)
         try:
             current_entropy = ant.svd_entropy(newdf['value'].to_numpy(), normalize=True)
             entropy_identifier = self.entropy_boundary_bottom <= current_entropy <= self.entropy_boundary_up
@@ -191,7 +193,9 @@ class SARIMA:
                     newdf = newdf[0:1]
                 newdf = newdf.asfreq(self.freq)
                 self.model = self.model.append(newdf.astype(float))
-
+        print(newdf.head())
+        print(self.model.fittedvalues.tail())
+        print('*****************************')
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
@@ -215,18 +219,18 @@ class SARIMA:
 
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
-                if not isinstance(idx, int):
+                print(idx)
+                print(type(idx))
+                try:
                     t = datetime.datetime.strptime(str(idx), '%Y-%m-%d %H:%M:%S').timestamp()
-                else:
+                except:
                     t = idx
                 error = abs(newdf.loc[idx, 'value'] - pred.predicted_mean.loc[idx])
                 self.drift_detector.update_ewma(error=error, t=t)
                 response = self.drift_detector.monitor()
+                print('**', error, response)
                 if response == self.drift_detector.drift:
                     self.drift_alerting_cts += 1
-                if self.drift_alerting_cts == self.drift_count_limit:
-                    # TODO: retrain
-                    pass
 
                 if adjust_range(row['lower value'], 'div', self.conf_bottom) <= newdf.loc[idx, 'value'] \
                         <= adjust_range(row['upper value'], 'mult', self.conf_top):
@@ -247,6 +251,17 @@ class SARIMA:
 
         # self.latest_train_snippest = pd.concat([self.latest_train_snippest, newdf])[-self.train_size:]
         print('round done')
+        print('++', self.drift_alerting_cts, self.drift_count_limit)
+        if self.drift_alerting_cts >= self.drift_count_limit:
+            print('Drift detected: retraining')
+            start_time = time.time()
+            self.drift_alerting_cts = 0
+            self.drift_detector = ECDD(0.2, self.w, self.c)
+            self.drift_detector.record(np.mean(newdf['value'].tolist()), np.std(newdf['value'].tolist()))
+            self.fit(newdf, 'retrain')
+            end_time = time.time()
+            diff = end_time - start_time
+            print(f"Trained sarima for {diff}")
 
         return y_pred, y_pred_e
 

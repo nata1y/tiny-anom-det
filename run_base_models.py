@@ -90,8 +90,9 @@ def fit_base_model(model_params, for_optimization=True):
 
     elif name == 'lstm':
         X, y = create_dataset(data_train[['value']], data_train[['value']], anomaly_window)
+        print('shape1', X.shape, y.shape)
         start_time = time.time()
-        model.fit(X, y, data_train['timestamp'], data_train['value'].tolist())
+        model.fit(X, y, data_train['value'].tolist())
         end_time = time.time()
 
         diff = end_time - start_time
@@ -154,6 +155,7 @@ def fit_base_model(model_params, for_optimization=True):
 
                         y_pred_e = [1 if x else 0 for x in res['isAnomaly_e'].tolist()]
                     except Exception as e:
+                        raise e
                         y_pred_noe = [0 for _ in range(window.shape[0])]
                         y_pred_e = [0 for _ in range(window.shape[0])]
 
@@ -182,8 +184,8 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         print('Plotting..........')
-        plot_general(model, dataset, type, name, data_test,
-                     y_pred_total_e, filename, drift_windows)
+        # plot_general(model, dataset, type, name, data_test,
+        #              y_pred_total_e, filename, drift_windows)
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -208,7 +210,7 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         try:
-            stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_test.csv')
+            stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_tuned.csv')
         except:
             stats_full = pd.DataFrame([])
 
@@ -219,7 +221,7 @@ def fit_base_model(model_params, for_optimization=True):
             'f1-e': met_total_e[2][-1],
             'f1-noe': met_total_noe[2][-1],
         }, ignore_index=True)
-        stats_full.to_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_test.csv', index=False)
+        stats_full.to_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_tuned.csv', index=False)
     # return specificity if no anomalies, else return f1 score
     if data_test['is_anomaly'].tolist().count(1) == 0:
         return 1.0 - met_total_noe[0][-1]
@@ -235,7 +237,9 @@ if __name__ == '__main__':
        hp = pd.DataFrame([])
 
     continuer = True
-    for dataset, type in [('NAB', 'windows')]:
+    for dataset, type in [('NAB', 'windows'), ('yahoo', 'real'),
+                          ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'),
+                          ('yahoo', 'A4Benchmark'), ('kpi', 'train')]:
         # options:
         # ('kpi', 'train'), ('NAB', 'windows'), ('NAB', 'relevant'),
         # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
@@ -246,7 +250,7 @@ if __name__ == '__main__':
             train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
 
             try:
-                stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_test.csv')
+                stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_tuned.csv')
             except:
                 stats_full = pd.DataFrame([])
 
@@ -277,35 +281,35 @@ if __name__ == '__main__':
 
                     try:
                         ################ Bayesian optimization ###################################################
-                        # if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
-                        #     print(bo_space)
-                        #     try:
-                        #         bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                        #                                 random_state=3, verbose=True, x0=def_params)
-                        #     except ValueError as e:
-                        #         # error is rised when function yields constant value and does not converge
-                        #         bo_result = mock.Mock()
-                        #         bo_result.x = def_params
-                        #
-                        #     print(f"Found hyper parameters for {name}: {bo_result.x}")
-                        #
-                        #     if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
-                        #         hp = hp.append({
-                        #             'filename': filename.replace('.csv', ''),
-                        #             'model': name,
-                        #             'hp': bo_result.x
-                        #         }, ignore_index=True)
-                        #
-                        #         hp.to_csv('hyperparams.csv', index=False)
-                        # else:
-                        #     bo_result = mock.Mock()
-                        #     bo_result.x = ast.literal_eval(
-                        #         hp[(hp['filename'] == filename.replace('.csv', ''))
-                        #            & (hp['model'] == name)]['hp'].tolist()[0])
+                        if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
+                            print(bo_space)
+                            try:
+                                bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                                                        random_state=3, verbose=True, x0=def_params)
+                            except ValueError as e:
+                                # error is rised when function yields constant value and does not converge
+                                bo_result = mock.Mock()
+                                bo_result.x = def_params
 
-                        bo_result = mock.Mock()
-                        bo_result.x = def_params
+                            print(f"Found hyper parameters for {name}: {bo_result.x}")
+
+                            if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
+                                hp = hp.append({
+                                    'filename': filename.replace('.csv', ''),
+                                    'model': name,
+                                    'hp': bo_result.x
+                                }, ignore_index=True)
+
+                                hp.to_csv('hyperparams.csv', index=False)
+                        else:
+                            bo_result = mock.Mock()
+                            bo_result.x = ast.literal_eval(
+                                hp[(hp['filename'] == filename.replace('.csv', ''))
+                                   & (hp['model'] == name)]['hp'].tolist()[0])
+
+                        # bo_result = mock.Mock()
+                        # bo_result.x = def_params
                         fit_base_model(bo_result.x, for_optimization=False)
 
                     except Exception as e:
-                        raise e
+                        pass

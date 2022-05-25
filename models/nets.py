@@ -1,4 +1,5 @@
 # fromhttps://towardsdatascience.com/time-series-of-price-anomaly-detection-with-lstm-11a12ba4f6d9
+import time
 from datetime import datetime
 
 import funcy
@@ -17,6 +18,7 @@ import antropy as ant
 
 from drift_detectors.ECDD import ECDD
 from settings import entropy_params
+from utils import create_dataset
 
 print(f'Running on GPU {tf.test.is_built_with_cuda()}. Devices: {tf.config.list_physical_devices("GPU")}')
 
@@ -50,8 +52,9 @@ class LSTM_autoencoder:
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
+        self.data_for_retrain = []
 
-    def fit(self, X_train, y_train, timestamp, Xf):
+    def fit(self, X_train, y_train, Xf, phase='train'):
         self.history = self.model.fit(X_train, y_train, epochs=100, batch_size=32,
                     callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, mode='min')],
                                       validation_split=0.1,  shuffle=False)
@@ -62,16 +65,17 @@ class LSTM_autoencoder:
 
         self.svd_entropies = []
 
-        for start in range(0, len(Xf), self.window):
-            try:
-                self.svd_entropies.append(
-                    ant.svd_entropy(Xf[start:start + self.window], normalize=True))
-            except:
-                pass
-        self.boundary_bottom = np.mean([v for v in self.svd_entropies if pd.notna(v)]) - \
+        if phase != 'retrain':
+            for start in range(0, len(Xf), self.window):
+                try:
+                    self.svd_entropies.append(
+                        ant.svd_entropy(Xf[start:start + self.window], normalize=True))
+                except:
+                    pass
+            self.boundary_bottom = np.mean([v for v in self.svd_entropies if pd.notna(v)]) - \
+                                   self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
+            self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
                                self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
-        self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
-                           self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
 
         self.drift_detector.record(np.mean(self.history.history['loss']),
                                    np.std(self.history.history['loss']))
@@ -103,10 +107,6 @@ class LSTM_autoencoder:
             response = self.drift_detector.monitor()
             if response == self.drift_detector.drift:
                 self.drift_alerting_cts += 1
-            if self.drift_alerting_cts == self.drift_count_limit:
-                # TODO: retrain
-                pass
-            print('**', response)
 
         y_pred1 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
         if self.boundary_bottom <= entropy <= self.boundary_up:
@@ -119,6 +119,22 @@ class LSTM_autoencoder:
 
         self.loss += loss.flatten().tolist()
         self.predicted += y_pred1
+        if self.drift_alerting_cts >= self.drift_count_limit:
+            if len(self.data_for_retrain) > self.window * 5:
+                print('Drift occured')
+                start_time = time.time()
+                tmp = pd.DataFrame(columns=['values'])
+                tmp['values'] = self.data_for_retrain
+                X, y = create_dataset(tmp, tmp, self.window)
+                self.fit(X, y, self.data_for_retrain, 'retrain')
+                end_time = time.time()
+                diff = end_time - start_time
+                print(f"Trained lstm for {diff}")
+                self.data_for_retrain = []
+                self.drift_alerting_cts = 0
+            else:
+                self.data_for_retrain += funcy.lflatten(X.flatten())
+                print('?&', len(self.data_for_retrain))
         return y_pred1, y_pred2
 
     def plot(self, datatest):
