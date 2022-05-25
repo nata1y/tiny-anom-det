@@ -2,511 +2,373 @@
 import random
 import numpy as np
 import copy
-import pandas as pd
-import matplotlib.pyplot as plt
 from numpy import array
-from models.pso_elm.utils.partition_series import Particionar_series
+from models.pso_elm.utils.partition_series import SeriesPreprocessor
 from models.pso_elm.regressors.ELM import ELMRegressor
 from sklearn.metrics import mean_absolute_error
+from settings import mi
 
-
-
-#limites
-mi = 100
-
-#variaveis auxiliares
-contador = 0
+#auxs vars
+counter = 0
 fitness = 0
-grafico = []
-lista_MSE = []
+mse = []
 
 
-class Particulas():
-    '''
-    classe para criar as particulas
-    '''
-    pass
+class Particle:
+    def __init__(self):
+        self.position = None
 
 
-class IDPSO_ELM():
-    def __init__(self, serie, divisao, janela, qtd_neuronios):
-        '''
-        Contrutor para o algoritmo de treinamento do ELM, o algoritmo utilizado e o IDPSO
-        :param serie: vetor, com a serie temporal utilizada para treinamento 
-        :param divisao: lista com porcentagens, da seguinte forma [pct_treinamento_entrada, pct_treinamento_saida, pct_validacao_entrada, pct_validacao_saida]
-        :param janela: quantidade de lags usados para modelar os padroes de entrada da ELM
-        :param qtd_neuronios: quantidade de neuronios da camada escondida da ELM
-        '''
-        
-        #serie = vetor
-        #divisao = lista com três porcentagens para divisao da serie
-        #janela = quantidade de lags
-        #qtd_neuronios = quantidade de neuronios
-        
-        #tratando os dados
-        #dataset = [treinamento_entrada, treinamento_saida, validacao_entrada, valic_saida, teste_entrada, teste_saida]
-        dataset = self.Tratamento_Dados(serie, divisao, janela)
+class IDPSO_ELM:
+    def __init__(self, serie, split, window, qtd_neurons):
+        dataset = self.prepare_data(serie, split, window)
         
         self.dataset = dataset
-        self.qtd_neuronios = qtd_neuronios
+        self.qtd_neurons = qtd_neurons
         self.best_elm = []
         
         #default IDPSO
-        self.linhas = self.dataset[0].shape[1] + 1
-        self.numero_dimensoes =  self.linhas * qtd_neuronios
+        self.lines = self.dataset[0].shape[1] + 1
+        self.dimentions = self.lines * qtd_neurons
         
-        self.iteracoes = 1000
+        self.iters = 1000
         self.num_particles = 30
         self.inercia = 0.5
         self.inercia_final = 0.3
         self.c1 = 2.4
         self.c2 = 1.4
-        self.crit_parada = 50
-        self.particulas = []
+        self.crit = 50
+        self.particles = []
         self.gbest = []
         
-        self.particulas_ordenadas = [0] * self.num_particles
-        self.sensores = [0] * self.num_particles
+        self.ordered_particles = [0] * self.num_particles
+        self.sensors = [0] * self.num_particles
         
-        self.tx_espalhar = 0
+        self.tx_spread = 0
         
-    def Parametros_IDPSO(self, iteracoes, num_particles, inercia_inicial, inercia_final, c1, c2, Xmax, crit_parada):
+    def set_params(self, iterations, num_particles, inercia, inercia_final, c1, c2, Xmax, crit):
         '''
-        Metodo para alterar os parametros basicos do IDPSO 
-        :param iteracoes: quantidade de geracoes para o treinamento 
-        :param num_particles: quantidade de particulas usadas para treinamento
-        :param inercia: inercial inicial para treinamento
-        :param inercia_final: inercia final para variacao
-        :param c1: coeficiente cognitivo
-        :param c2: coeficiente pessoal
-        :param crit_parada: criterio de parada para limitar a repeticao nao melhora do gbest
+        Method to change basic IDPSO parameters
+        :param iterations: number of training iterations
+        :param num_particles: amount of particles used for training
+        :param inercia: initial inertial for training
+        :param inercia_final: final inertia_final for variation
+        :param c1: cognitive coefficient
+        :param c2: personal coefficient
+        :param crit: stop criteria to limit repetition not improvement of gbest
         '''
         
-        self.iteracoes = iteracoes
+        self.iters = iterations
         self.num_particles = num_particles
-        self.inercia_inicial = inercia_inicial
+        self.inercia_inicial = inercia
         self.inercia_final = inercia_final
         self.c1 = c1
         self.c2 = c2
-        self.crit_parada = crit_parada
+        self.crit = crit
         
-        self.particulas_ordenadas = [0] * self.num_particles
-        self.sensores = [0] * self.num_particles
+        self.ordered_particles = [0] * self.num_particles
+        self.sensors = [0] * self.num_particles
         
         self.xmax = Xmax
         self.xmin = -Xmax
         self.posMax = Xmax
         self.posMin = self.xmin
     
-    def Tratamento_Dados(self, serie, divisao, janela):
+    def prepare_data(self, serie, split, window):
         '''
-        Metodo para dividir a serie temporal em treinamento e validacao 
-        :param serie: vetor, com a serie temporal utilizada para treinamento 
-        :param divisao: lista com porcentagens, da seguinte forma [pct_treinamento_entrada, pct_treinamento_saida, pct_validacao_entrada, pct_validacao_saida]
-        :param janela: quantidade de lags usados para modelar os padroes de entrada da ELM
-        :return: retorna uma lista com os seguintes dados [treinamento_entrada, treinamento_saida, validacao_entrada, validacao_saida]
+        Method to divide the time series into training and validation
         '''
-        
-        #tratamento dos dados
-        particao = Particionar_series(serie, divisao, janela)
-        [train_entrada, train_saida] = particao.Part_train()
-        [val_entrada, val_saida] = particao.Part_val()
-        [test_entrada, test_saida] = particao.Part_test()
-        
-        #inserindo os dados em uma lista
-        lista_dados = []
-        lista_dados.append(train_entrada)
-        lista_dados.append(train_saida)
-        lista_dados.append(val_entrada)
-        lista_dados.append(val_saida)
-        lista_dados.append(test_entrada)
-        lista_dados.append(test_saida)
-        
-        #retornando o valor
-        return lista_dados
+        partition = SeriesPreprocessor(serie, split, window)
+
+        [train_start, train_end] = partition.part_train()
+        [val_start, val_end] = partition.part_val()
+        [test_start, test_end] = partition.part_test()
+
+        data = []
+        data.append(train_start)
+        data.append(train_end)
+        data.append(val_start)
+        data.append(val_end)
+        data.append(test_start)
+        data.append(test_end)
+
+        return data
       
-    def Criar_Particula(self):
-        '''
-        Metodo para criar todas as particulas do enxame de forma aleatoria 
-        '''
-        
-        global contador, fitness, grafico, lista_MSE
-        contador = 0
+    def create_particles(self):
+        global counter, fitness, mse
+        counter = 0
         fitness = 0
-        grafico = []
-        lista_MSE = []
+        mse = []
         
         for i in range(self.num_particles):
-            p = Particulas()
-            p.posicao = np.random.randn(1, self.numero_dimensoes)
-            p.posicao = p.posicao[0]
-            p.fitness = self.Funcao(p.posicao)
-            p.velocidade = array([0.0 for i in range(self.numero_dimensoes)])
-            p.best = p.posicao
+            p = Particle()
+            p.position = np.random.randn(1, self.dimentions)
+            p.position = p.position[0]
+            p.fitness = self.objective(p.position)
+            p.velocity = array([0.0 for i in range(self.dimentions)])
+            p.best = p.position
             p.fit_best = p.fitness
             p.c1 = self.c1
             p.c2 = self.c2
             p.inercia = self.inercia
             p.phi = 0
-            self.particulas.append(p)
+            self.particles.append(p)
         
-        self.gbest = self.particulas[0]
+        self.gbest = self.particles[0]
         
-    def Funcao(self, posicao):
+    def objective(self, position):
         '''
-        Metodo para calcular a funcao objetivo do IDPSO, nesse caso a funcao e a previsao de um ELM 
-        :param posicao: posicao seria os pesos da camada de entrada e os bias da rede ELM 
-        :return: retorna o MSE obtido da previsao de uma ELM
+        Method to calculate the objective function of the IDPSO,
+        in this case the function is the prediction of an ELM
         '''
-        
-        # instanciando um modelo ELM
-        ELM = ELMRegressor(self.qtd_neuronios)
-        
-        # modelando a dimensao das particulas para serem usadas 
-        posicao = posicao.reshape(self.linhas, self.qtd_neuronios)
-        
-        # ELM treinando com a entrada e a saida do conjunto de treinamento e tambem com os pesos da particula 
-        ELM.Treinar(self.dataset[0], self.dataset[1], posicao)
-        
-        # Realizando a previsao para o conjunto de validacao
-        prediction_val = ELM.Predizer(self.dataset[2])
-        
-        # computando o erro do conjunto de validacao
+        ELM = ELMRegressor(self.qtd_neurons)
+        position = position.reshape(self.lines, self.qtd_neurons)
+        ELM.fit(self.dataset[0], self.dataset[1], position)
+        prediction_val = ELM.predict(self.dataset[2])
         MAE_val = mean_absolute_error(self.dataset[3], prediction_val)
-        
-        # retornando o erro do conjunto de validacao - forma de evitar o overfitting
+
         return MAE_val
     
-    def Fitness(self):
+    def fitness(self):
         '''
-        Metodo para computar o fitness de todas as particulas 
+        Methods to calculate fitness for particles
+        '''
+        for i in self.particles:
+            i.fitness = self.objective(i.position)
+        
+    def velocity(self):
+        '''
+        Calculate velocity of particles
         '''
         
-        for i in self.particulas:   
-            i.fitness = self.Funcao(i.posicao)
-        
-    def Velocidade(self):
-        '''
-        Metodo para computar a velocidade de todas as particulas 
-        '''
-        
-        calculo_c1 = 0
-        calculo_c2 = 0
-        
-        for i in self.particulas:
-            for j in range(len(i.posicao)):
-                calculo_c1 = (i.best[j] - i.posicao[j])
-                calculo_c2 = (self.gbest.posicao[j] - i.posicao[j])
+        for i in self.particles:
+            for j in range(len(i.position)):
+                value_c1 = (i.best[j] - i.position[j])
+                value_c2 = (self.gbest.position[j] - i.position[j])
                 
-                influecia_inercia = (i.inercia * i.velocidade[j])
-                influencia_cognitiva = ((i.c1 * random.random()) * calculo_c1)
-                influecia_social = ((i.c2 * random.random()) * calculo_c2)
+                inercia = (i.inercia * i.velocidade[j])
+                cognitive = ((i.c1 * random.random()) * value_c1)
+                group = ((i.c2 * random.random()) * value_c2)
               
-                i.velocidade[j] = influecia_inercia + influencia_cognitiva + influecia_social
+                i.velocidade[j] = inercia + cognitive + group
                 
-                if (i.velocidade[j] >= self.xmax):
-                    i.velocidade[j] = self.xmax
-                elif(i.velocidade[j] <= self.xmin):
-                    i.velocidade[j] = self.xmin
+                if i.velocity[j] >= self.xmax:
+                    i.velocity[j] = self.xmax
+                elif i.velocity[j] <= self.xmin:
+                    i.velocity[j] = self.xmin
               
-    def Atualizar_particulas(self):
-        '''
-        Metodo para atualizar a posicao de todas as particulas 
-        '''
-        
-        for i in self.particulas:
-            for j in range(len(i.posicao)):
-                i.posicao[j] = i.posicao[j] + i.velocidade[j]
+    def update_particles(self):
+        for i in self.particles:
+            for j in range(len(i.position)):
+                i.position[j] = i.position[j] + i.velocidade[j]
                 
-                if (i.posicao[j] >= self.posMax):
-                    i.posicao[j] = self.posMax
-                elif(i.posicao[j] <= self.posMin):
-                    i.posicao[j] = self.posMin
+                if i.position[j] >= self.posMax:
+                    i.position[j] = self.posMax
+                elif i.position[j] <= self.posMin:
+                    i.position[j] = self.posMin
 
-    def Atualizar_parametros(self, iteracao):
+    def update_params(self, iteration):
         '''
-        Metodo para atualizar os parametros: inercia, c1 e c2 
+        Update inercia, c1, c2
         '''
         
-        for i in self.particulas:
-            parte1 = 0
-            parte2 = 0
+        for i in self.particles:
+            part1 = 0
+            part2 = 0
             
-            for j in range(len(i.posicao)):
-                parte1 = parte1 + self.gbest.posicao[j] - i.posicao[j]
-                parte2 = parte2 + i.best[j] - i.posicao[j]
+            for j in range(len(i.position)):
+                part1 = part1 + self.gbest.position[j] - i.position[j]
+                part2 = part2 + i.best[j] - i.position[j]
                 
-                if(parte1 == 0):
-                    parte1 = 1
-                if(parte2 == 0):
-                    parte2 = 1
+                if part1 == 0:
+                    part1 = 1
+                if part2 == 0:
+                    part2 = 1
                     
-            i.phi = abs(parte1/parte2)
+            i.phi = abs(part1/part2)
             
-        for i in self.particulas:
+        for i in self.particles:
             ln = np.log(i.phi)
-            calculo = i.phi * (iteracao - ((1 + ln) * self.iteracoes) / mi)
-            i.inercia = ((self.inercia - self.inercia_final) / (1 + np.exp(calculo))) + self.inercia_final
+            value = i.phi * (iteration - ((1 + ln) * self.iters) / mi)
+            i.inercia = ((self.inercia - self.inercia_final) / (1 + np.exp(value))) + self.inercia_final
             i.c1 = self.c1 * (i.phi ** (-1))
             i.c2 = self.c2 * i.phi
        
     def Pbest(self):
         '''
-        Metodo para computar os pbests das particulas  
+        Calculates particle's personal best
         '''
-        
-        for i in self.particulas:
-            if(i.fit_best >= i.fitness):
-                i.best = i.posicao
+        for i in self.particles:
+            if i.fit_best >= i.fitness:
+                i.best = i.position
                 i.fit_best = i.fitness
 
     def Gbest(self):
         '''
-        Metodo para computar o gbest do enxame  
+        Calculates group best
         '''
-        
-        for i in self.particulas:
-            if(i.fitness <= self.gbest.fitness):
+        for i in self.particles:
+            if i.fitness <= self.gbest.fitness:
                 self.gbest = copy.deepcopy(i)
     
-    def Criterio_parada(self, i):
+    def stop_criteria(self, i):
         '''
-        Metodo para computar os criterios de parada, tanto o GL5 como o para nao melhora da melhor solucao
-        :param i: atual geracao
-        :return: retorna a indice da ultima geracao para parar o algoritmo  
+        Method to compute the stop criteria, both for the GL5 and
+        for no more improvement of the best solution
         '''
         
-        global contador, fitness, lista_MSE
+        global counter, fitness, mse
         
-        if(i == 0):
+        if i == 0:
             fitness = copy.deepcopy(self.gbest.fitness)
             return i
-        
         else:
             
-            if(contador == self.crit_parada):
-                #print("[%d] Sem melhora: " % (i) + " : ", self.gbest.fitness)
-                return self.iteracoes
-            
-            if(fitness == self.gbest.fitness):
-                contador+=1
+            if counter == self.crit:
+                return self.iters
+            elif fitness == self.gbest.fitness:
+                counter += 1
                 return i
-            
             else:
                 fitness = copy.deepcopy(self.gbest.fitness)
-                contador = 0
+                counter = 0
                 return i
-    
-    def Grafico_Convergencia(self, fitness, i):
-        '''
-        Metodo para apresentar o grafico de convergencia
-        :param fitness: fitness da melhor particula da geracao
-        :param i: atual geracao
-        '''
-        
-        global grafico
-        
-        grafico.append(fitness)
-        
-        if(i == self.iteracoes):
-            plt.plot(grafico)
-            plt.title('Gráfico de Convergência')
-            plt.show()
             
-    def Predizer(self, Entradas, num_sensor = None, Saidas = None, grafico = None):
+    def predict(self, input, num_sensor=None, output=None):
         '''
-        Metodo para realizar a previsao com a melhor particula (ELM) do enxame e apresentar o grafico de previsao
-        :param Entradas: padroes de entrada para realizar a previsao
-        :param Saidas: padroes de saida para computar o MSE
-        :param grafico: variavel booleana para ativar ou desativar o grafico de previsao
-        :return: Retorna a predicao para as entradas apresentadas. Se as entradas e saidas sao apresentadas o MSE e retornado
+        Method to perform the prediction with the best particle (ELM) of the Swarm
         '''
         
-        # se o numero do sensor não é passado então a predição é feita com o gbest
-        if(num_sensor == None):
-        
-            #retorna somente a previsao
-            if(Saidas == None):
-                prediction = self.best_elm.Predizer(Entradas)
+        # if the sensor number is not passed then the prediction is made with gbest
+        if num_sensor is None:
+            if output is None:
+                prediction = self.best_elm.predict(input)
                 return prediction
             else:
-                prediction = self.best_elm.Predizer(Entradas)
-                MSE = mean_absolute_error(Saidas, prediction)
+                prediction = self.best_elm.predict(input)
+                MSE = mean_absolute_error(output, prediction)
                 print('\n MSE: %.2f' %MSE)
-    
-                #apresentar grafico
-                if(grafico == True):
-                    plt.plot(Saidas, label = 'Real', color = 'Blue')
-                    plt.plot(prediction, label = 'Previsão', color = 'Red')
-                    plt.title('MSE: %2f' %MSE)
-                    plt.legend()
-                    plt.tight_layout()
-                    plt.show()
                 
                 return MSE
-        
         else:
-            # realizando a previsao com o sensor passado
-            prediction = self.sensores[num_sensor].Predizer(Entradas)
+            prediction = self.sensors[num_sensor].predict(input)
             return prediction
         
-    def Realizar_Previsao(self, Entradas):
+    def forecast(self, input):
         '''
-        Metodo para realizar a previsao com a melhor particula (ELM) do enxame
-        :param Entradas: padroes de entrada para realizar a previsao
-        :return: Retorna a predicao para as entradas apresentadas
+        Prediction performed be the bast particle
         '''
-        
-        return self.best_elm.Predizer(Entradas)
+
+        return self.best_elm.predict(input)
     
-    def Ordenar_particulas(self):
+    def order_particles(self):
         '''
         Metodo para ordenar as particulas por menor fitness  
         '''
         
-        self.particulas_ordenadas = copy.deepcopy(self.particulas)
+        self.ordered_particles = copy.deepcopy(self.particles)
         
-        for i in range(0, len(self.particulas_ordenadas)-1):
+        for i in range(0, len(self.ordered_particles) - 1):
             imin = i
-            for j in range(i+1, len(self.particulas_ordenadas)):
-                if(self.particulas_ordenadas[j].fitness < self.particulas_ordenadas[imin].fitness):
+            for j in range(i+1, len(self.ordered_particles)):
+                if self.ordered_particles[j].fitness < self.ordered_particles[imin].fitness:
                     imin = j
-            aux = self.particulas_ordenadas[imin]
-            self.particulas_ordenadas[imin]  = self.particulas_ordenadas[i]
-            self.particulas_ordenadas[i] = aux
-            
-            
-        '''
-        # codigo para saber se as particulas estão ordenadas
-        acuracias = []
-        for i in range(len(self.particulas_ordenadas)):
-            acuracias.append(self.particulas_ordenadas[i].fitness)
-            
-        plt.plot(acuracias)
-        plt.show()
-        '''
+            aux = self.ordered_particles[imin]
+            self.ordered_particles[imin] = self.ordered_particles[i]
+            self.ordered_particles[i] = aux
              
-    def Obter_sensores(self):
-        '''
-        Metodo para obter os sensores (particulas) ordenados 
-        '''
+    def get_sensors(self):
+        self.order_particles()
         
-        self.Ordenar_particulas()
-        
-        for x, i in enumerate(self.particulas_ordenadas):
-            ELM = ELMRegressor(self.qtd_neuronios)
-            posicao = i.posicao.reshape(self.linhas, self.qtd_neuronios)
-            ELM.Treinar(self.dataset[0], self.dataset[1], posicao)
-            self.sensores[x] = ELM
+        for x, i in enumerate(self.ordered_particles):
+            ELM = ELMRegressor(self.qtd_neurons)
+            position = i.position.reshape(self.lines, self.qtd_neurons)
+            ELM.fit(self.dataset[0], self.dataset[1], position)
+            self.sensors[x] = ELM
             
-        self.best_elm = self.sensores[0]
+        self.best_elm = self.sensors[0]
         
-    def Treinar(self):
-        '''
-        Metodo para treinar a rede ELM com o IDPSO 
-        '''
-        
-        self.Criar_Particula()       
+    def train(self):
+        self.create_particles()
         
         i = 0
-        while(i < self.iteracoes):
-            i = i + 1
+        while i < self.iters:
+            i += 1
             
-            self.Fitness()
+            self.fitness()
             self.Gbest()
             self.Pbest()
-            self.Velocidade()
-            self.Atualizar_parametros(i)
-            self.Atualizar_particulas()
-            i = self.Criterio_parada(i)
-            
-            #print("[%d]" % (i) + " : ", self.gbest.fitness)
-            #self.Grafico_Convergencia(self.gbest.fitness, i)
+            self.velocity()
+            self.update_params(i)
+            self.update_particles()
+            i = self.stop_criteria(i)
         
-        self.Obter_sensores()
-        self.Melhor_ELM()
+        self.get_sensors()
+        self.determine_best_elm()
         
-    def Melhor_ELM(self):
-        '''
-        método para retornar o melhor ELM
-        '''
-        
-        ELM = ELMRegressor(self.qtd_neuronios)
-        posicao = self.gbest.posicao.reshape(self.linhas, self.qtd_neuronios)
-        ELM.Treinar(self.dataset[0], self.dataset[1], posicao)
+    def determine_best_elm(self):
+        ELM = ELMRegressor(self.qtd_neurons)
+        position = self.gbest.position.reshape(self.lines, self.qtd_neurons)
+        ELM.fit(self.dataset[0], self.dataset[1], position)
             
         self.best_elm = ELM
         
-    def Espalhar_particulas(self):
+    def spread(self):
         '''
-        método para apagar as informações de parte do enxame, essa parte é definida por uma porcentagem: self.tx_espalhar
+        method to erase swarm part information
         '''
         
-        qtd = len(self.particulas)
-        tx = int(qtd * self.tx_espalhar) 
-        #print("taxa:", tx)
-        escolhidos = []
+        qtd = len(self.particles)
+        tx = int(qtd * self.tx_spread)
+        choices = []
         
         for i in range(tx):
             
-            j = self.Gerar_numero(qtd-1, escolhidos)
-            escolhidos.append(j)
-            #print("indices gerados: [", j, "]")
+            j = self.generate(qtd - 1, choices)
+            choices.append(j)
         
-            self.particulas[j].posicao = np.random.randn(1, self.numero_dimensoes)
-            self.particulas[j].posicao = self.particulas[j].posicao[0]
-            self.particulas[j].fitness = self.Funcao(self.particulas[j].posicao)
-            self.particulas[j].velocidade = array([0.0 for i in range(self.numero_dimensoes)])
-            self.particulas[j].best = self.particulas[j].posicao
-            self.particulas[j].fit_best = self.particulas[j].fitness
-            self.particulas[j].c1 = self.c1
-            self.particulas[j].c2 = self.c2
-            self.particulas[j].inercia = self.inercia
-            self.particulas[j].phi = 0
+            self.particles[j].position = np.random.randn(1, self.dimentions)
+            self.particles[j].position = self.particles[j].position[0]
+            self.particles[j].fitness = self.objective(self.particles[j].position)
+            self.particles[j].velocidade = array([0.0 for i in range(self.dimentions)])
+            self.particles[j].best = self.particles[j].position
+            self.particles[j].fit_best = self.particles[j].fitness
+            self.particles[j].c1 = self.c1
+            self.particles[j].c2 = self.c2
+            self.particles[j].inercia = self.inercia
+            self.particles[j].phi = 0
             
-        global contador
-        contador = 0
+        global counter
+        counter = 0
     
-    def Gerar_numero(self, qtd, escolhidos):
+    def generate(self, qtd, choices):
         '''
-        Método para gerar um numero aleatorio de forma que os valores não se repitam
+        Random num generator
         '''
-        
         j = np.random.randint(0, qtd)
-        
-        if(j in escolhidos):
+        if j in choices:
             
-            return self.Gerar_numero(qtd, escolhidos)
+            return self.generate(qtd, choices)
             
         else:
             return j
     
-    def Retreinar(self):
-        '''
-        Metodo para retreinar um modelo 
-        '''
-        
-        self.Espalhar_particulas()
+    def retrain(self):
+        self.spread()
         
         i = 0
-        while(i < self.iteracoes):
-            i = i + 1
+        while i < self.iters:
+            i += 1
             
-            self.Fitness()
+            self.fitness()
             self.Gbest()
             self.Pbest()
-            self.Velocidade()
-            self.Atualizar_parametros(i)
-            self.Atualizar_particulas()
-            i = self.Criterio_parada(i)
-            
-            #print("[%d]" % (i) + " : ", self.gbest.fitness)
-            #self.Grafico_Convergencia(self.gbest.fitness, i)
-        
-        self.Obter_sensores()
+            self.velocity()
+            self.update_params(i)
+            self.update_particles()
+            i = self.stop_criteria(i)
+
+        self.get_sensors()
     
-    def Atualizar_bestmodel(self, novo):
-        '''
-        método para atualizar o melhor regressor do enxame
-        '''
-        self.best_elm = novo
+    def update_best(self, new_data):
+        self.best_elm = new_data
