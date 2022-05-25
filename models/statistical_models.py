@@ -1,4 +1,5 @@
 # twist on https://github.com/RuoyunCarina-D/Anomly-Detection-SARIMA/blob/master/SARIMA.py
+import copy
 import datetime
 import itertools
 import time
@@ -11,14 +12,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import antropy as ant
 
-from drift_detectors.ECDD import ECDD
+from drift_detectors.ecdd import ECDD
 from settings import entropy_params
 from utils import adjust_range
 
 
 class SARIMA:
 
-    def __init__(self, dataset, datatype, conf_top=1.5, conf_bottom=1.5,
+    def __init__(self, dataset, datatype, filename, conf_top=1.5, conf_bottom=1.5,
                  train_size=3000, w=0.25, c=0.25, drift_count_limit=10):
         self.full_pred = []
         self.mean_fluctuation = []
@@ -33,6 +34,7 @@ class SARIMA:
         self.freq = None
         self.datatype = datatype
         self.dataset = dataset
+        self.filename = filename.replace(".csv", "")
         self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
         self.w = w
@@ -75,7 +77,8 @@ class SARIMA:
             data = data.asfreq(self.freq)
             return data
 
-    def fit(self, data, dataset):
+    def fit(self, data_train, dataset=None):
+        data = copy.deepcopy(data_train[['timestamp', 'value']])
         if dataset != 'retrain':
             self.form_entropy(data)
             self.dataset = dataset
@@ -93,8 +96,6 @@ class SARIMA:
         seasonal_pdq = [(x[0], x[1], x[2], period) for x in list(itertools.product(p, d, q))]
 
         best_aic = np.inf
-        best_pdq = None
-        best_seasonal_pdq = None
 
         for param in pdq:
             for param_seasonal in seasonal_pdq:
@@ -108,8 +109,6 @@ class SARIMA:
                     res = tmp_mdl.fit()
                     if res.aic < best_aic:
                         best_aic = res.aic
-                        best_pdq = param
-                        best_seasonal_pdq = param_seasonal
                         self.model = tmp_mdl
 
                 except Exception as e:
@@ -272,8 +271,9 @@ class SARIMA:
 
         return pred_thr[['lower value', 'upper value']]
 
-    def plot(self, y, filename, full_test_data, drift_windows):
-        y = self._get_time_index(y)
+    def plot(self, datatest):
+        full_test_data = copy.deepcopy(datatest)
+        y = self._get_time_index(datatest[['timestamp', 'value']])
         full_test_data = self._get_time_index(full_test_data)
         y = y.dropna(subset=['value'])
         ax = y['value'].plot(label='observed')
@@ -301,12 +301,10 @@ class SARIMA:
 
             idx += 1
 
-        for wd in drift_windows:
-            ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
         ax.set_xlabel('Date')
         ax.set_ylabel('Values')
         plt.legend()
-        plt.savefig(f'results/imgs/{self.dataset}/{self.datatype}/sarima_{filename.replace(".csv", "")}_full.png')
+        plt.savefig(f'results/imgs/{self.dataset}/{self.datatype}/sarima_{self.filename}_forecast.png')
 
         plt.close('all')
         plt.clf()

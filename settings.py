@@ -10,3 +10,13 @@ entropy_params = {'kpi_train': {'factor': 2.5, 'window': 35},
 data_in_memory_sz = 3000
 
 mi = 100
+
+#parametros IDPSO
+it = 50
+inercia_inicial = 0.8
+inercia_final = 0.4
+xmax = 1
+c1 = 2
+c2 = 2
+crit = 2
+split_dataset = [0.8, 0.2, 0]

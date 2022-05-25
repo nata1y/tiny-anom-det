@@ -4,7 +4,7 @@ import numpy as np
 import copy
 from numpy import array
 from models.pso_elm.utils.partition_series import SeriesPreprocessor
-from models.pso_elm.regressors.ELM import ELMRegressor
+from models.pso_elm.regressors.elm import ELMRegressor
 from sklearn.metrics import mean_absolute_error
 from settings import mi
 
@@ -25,7 +25,7 @@ class IDPSO_ELM:
         
         self.dataset = dataset
         self.qtd_neurons = qtd_neurons
-        self.best_elm = []
+        self.best_elm = None
         
         #default IDPSO
         self.lines = self.dataset[0].shape[1] + 1
@@ -39,7 +39,7 @@ class IDPSO_ELM:
         self.c2 = 1.4
         self.crit = 50
         self.particles = []
-        self.gbest = []
+        self.gbest = None
         
         self.ordered_particles = [0] * self.num_particles
         self.sensors = [0] * self.num_particles
@@ -66,7 +66,7 @@ class IDPSO_ELM:
         self.c2 = c2
         self.crit = crit
         
-        self.ordered_particles = [0] * self.num_particles
+        self.ordered_particles = [{}] * self.num_particles
         self.sensors = [0] * self.num_particles
         
         self.xmax = Xmax

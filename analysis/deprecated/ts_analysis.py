@@ -92,7 +92,7 @@ def machine_ts_to_features_correlation():
 def ts_properties_to_accuracy():
     correlation_df = pd.DataFrame([])
     idx = 0
-    for dataset, subsets in [('kpi', ['train']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark']),
+    for dataset, subsets in [('kpi', ['fit']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark']),
                              ('NAB', ['relevant'])]:
         for tss in subsets:
             ts_chaos = pd.read_csv(f'results/ts_properties/permutation_analysis_{dataset}_{tss}.csv').set_index('ts')

@@ -29,7 +29,7 @@ import pandas as pd
 import antropy as ant
 from scipy import stats
 
-from drift_detectors.ECDD import ECDD
+from drift_detectors.ecdd import ECDD
 from models.sr.msanomalydetector.util import *
 import models.sr.msanomalydetector.boundary_utils as boundary_helper
 import plotly.graph_objects as go
@@ -40,7 +40,7 @@ from settings import anomaly_window, entropy_params, data_in_memory_sz
 class SpectralResidual:
     def __init__(self, series, threshold, mag_window, score_window,
                  sensitivity, detect_mode, dataset,
-                 datatype, batch_size=32, w=0.25, c=0.25, drift_count_limit=10):
+                 datatype, filename, batch_size=32, w=0.25, c=0.25, drift_count_limit=10):
         self.__series__ = series
         self.__values__ = self.__series__['value'].tolist()
         self.__threshold__ = threshold
@@ -59,12 +59,14 @@ class SpectralResidual:
         self.dynamic_threshold = True
         self.datatype = datatype
         self.dataset = dataset
+        self.filename = filename.replace(".csv", "")
         self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
         self.drift_detector = ECDD(0.2, w, c)
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
+        self.dynamic_thresholds = []
 
     def fit(self):
         self.svd_entropies = []
@@ -111,7 +113,7 @@ class SpectralResidual:
                 'value': self.__series__['value'].tolist()[self.__series__.shape[0] - m + 1] + ghat * m},
                 ignore_index=True)
 
-    def detect_dynamic_threshold(self, window_step):
+    def predict(self, window_step):
         self.__anomaly_frame = self.__detect()
         try:
             entropy = ant.svd_entropy(window_step['value'].tolist()[-self.entropy_window:], normalize=True)
@@ -129,22 +131,22 @@ class SpectralResidual:
             if response == self.drift_detector.drift:
                 self.drift_alerting_cts += 1
             if self.drift_alerting_cts == self.drift_count_limit:
-                # TODO: retrain
                 pass
 
         if entropy < self.boundary_bottom or entropy > self.boundary_up:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
             extent = 1.5 - max(extent, 1.0 - extent)
             threshold_adapted = self.__threshold__ * extent
+            self.dynamic_thresholds += [threshold_adapted] * self.entropy_window
             result['isAnomaly_e'] = np.where(result['score'] > threshold_adapted, True, False)
         else:
+            self.dynamic_thresholds += [self.__threshold__] * self.entropy_window
             result['isAnomaly_e'] = result['isAnomaly']
 
         self.history = self.history.append(result[-self.entropy_window:], ignore_index=True)
-        print(self.history)
         return result[-self.entropy_window:]
 
-    def plot(self, dataset, datatype, filename, datatest, drift_windows):
+    def plot(self, datatest, threshold_type='dynamic'):
         fig = go.Figure()
 
         datatest.set_index('timestamp', inplace=True)
@@ -173,16 +175,9 @@ class SpectralResidual:
         if x_fn:
             fig.add_trace(go.Scatter(x=x_fn, y=y_fn, name='FN', mode="markers"))
 
-        for wd in drift_windows:
-            fig.add_trace(go.Scatter(x=[wd[0], wd[1], wd[1], wd[0]], y=[self.history['score'].min(),
-                                                                        self.history['score'].min(),
-                                                                        self.history['score'].max(),
-                                                                        self.history['score'].max()],
-                                     fill='toself'))
-
         fig.update_layout(showlegend=True, title='Saliency map')
         fig.write_image(
-            f'results/imgs/{dataset}/{datatype}/sr_{filename.replace(".csv", "")}_saliency_map.png')
+            f'results/imgs/{self.dataset}/{self.datatype}/sr_{self.filename}_saliency_map.png')
 
         fig.data = []
 

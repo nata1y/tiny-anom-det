@@ -20,50 +20,38 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 '''
 from models.pso_elm.utils.moving_window import MowingWindow
-from models.pso_elm.regressors.IDPSO_ELM import IDPSO_ELM
+from models.pso_elm.regressors.idpso_elm import IDPSO_ELM
 import matplotlib.pyplot as plt
-from drift_detectors.B import B
+from drift_detectors.b import B
 import time
 import pandas as pd
 import numpy as np
 import antropy as ant
 from scipy import stats
 from sklearn.metrics import mean_absolute_error
+from settings import, inercia_inicial, c1, c2, crit, inercia_final, xmax, split_dataset, it
 
 
-#parametros IDPSO
-it = 50 
-inercia_inicial = 0.8
-inercia_final = 0.4
-xmax = 1
-c1 = 2
-c2 = 2
-crit_parada = 2
-split_dataset = [0.8, 0.2, 0]
-
-
-class PSO_ELM_anomaly():
-    def __init__(self, n=500, lags=5, qtd_neuronios=10, num_particles=10, limite=10, w=0.25, c=0.25,
+class PSO_ELM_anomaly:
+    def __init__(self, dataset, datatype, filename,
+                 n=500, lags=5, qtd_neurons=10, num_particles=10, limit=10, w=0.25, c=0.25,
                  magnitude=5, entropy_window=100, error_threshold=0.1):
         '''
-        construtor do algoritmo que detecta a mudanca de ambiente por meio do comportamento das particulas
-        :param dataset: serie temporal que o algoritmo vai executar
-        :param qtd_train_inicial: quantidade de exemplos para o treinamento inicial
-        :param tamanho_window: tamanho da window de caracteristicas para identificar a mudanca
-        :param n: tamanho do n para reavaliar o metodo de deteccao
-        :param lags: quantidade de lags para modelar as input da RNA
-        :param qtd_neuronios: quantidade de neuronios escondidos da RNA
-        :param num_particles: numero de particulas para serem usadas no IDPSO
-        :param n_particulas_comportamento: numero de particulas para serem monitoradas na detecccao de mudanca
-        :param limite: counter para verificar a mudanca
+        :param n: fit/retrain size
+        :param lags: amount of lags in input
+        :param num_particles: num particles in swarm
+        :param limit: counter before alerting drift
+        :param entropy_window: window for calculating entropy
+        :param magnitude: magnitude of allowed deviation for entropy
+        :param error_threshold: error threshold
         '''
 
         self.n = n
         self.lags = lags
-        self.qtd_neuronios = qtd_neuronios
+        self.qtd_neurons = qtd_neurons
         self.num_particles = num_particles
 
-        self.limite = limite
+        self.limit = limit
         self.w = w
         self.c = c
         self.error_threshold = error_threshold
@@ -77,35 +65,36 @@ class PSO_ELM_anomaly():
                         }
         self.anomalous_batches = []
         self.deteccoes = []
-        self.erro_stream = 0
+        self.error_stream = 0
         self.loss_thresholds = {'fixed': [],
                                 'dynamic': []
                                 }
+        self.datatype = datatype
+        self.dataset = dataset
+        self.filename = filename.replace(".csv", "")
 
-    def train(self, data_train):
+    def fit(self, data_train):
         data_train = data_train['value'].to_numpy()
         self.per_batch_metrics = []
         self.y_true_batch = []
 
         start_time = time.time()
-        # criando e treinando um enxame_vigente para realizar as previsões
-        self.enxame = IDPSO_ELM(data_train, split_dataset, self.lags, self.qtd_neuronios)
-        self.enxame.set_params(it, self.num_particles, inercia_inicial, inercia_final, c1, c2, xmax, crit_parada)
-        self.enxame.train()
+        # Particle Swarm creation
+        self.swarm = IDPSO_ELM(data_train, split_dataset, self.lags, self.qtd_neurons)
+        self.swarm.set_params(it, self.num_particles, inercia_inicial, inercia_final, c1, c2, xmax, crit)
+        self.swarm.train()
 
-        # ajustando com os dados finais do treinamento a window de predicao
-        self.window_predicao = MowingWindow()
-        self.window_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
-        self.predicao = self.enxame.predict(self.window_predicao.data)
+        # adjust prediction window
+        self.window_prediction = MowingWindow()
+        self.window_prediction.adjust(self.swarm.dataset[0][(len(self.swarm.dataset[0]) - 1):])
+        self.prediction = self.swarm.predict(self.window_prediction.data)
 
-        # window com o atual conceito, tambem utilizada para armazenar os dados de retreinamento
-        self.window_caracteristicas = MowingWindow()
-        self.window_caracteristicas.adjust(data_train)
+        # window that records current concept
+        self.window_params = MowingWindow()
+        self.window_params.adjust(data_train)
 
-        # ativando o sensor de comportamento de acordo com a
-        # primeira window de caracteristicas para media e desvio padrão
-        self.b = B(self.limite, self.w, self.c)
-        self.b.record(self.window_caracteristicas.data, self.lags, self.enxame)
+        self.b = B(self.limit, self.w, self.c)
+        self.b.record(self.window_params.data, self.lags, self.swarm)
         end_time = time.time()
 
         self.traintime = end_time - start_time
@@ -115,7 +104,7 @@ class PSO_ELM_anomaly():
         self.predictions_df['errors'] = []
 
         self.window_train_loss = MowingWindow()
-        self.window_train_loss.adjust(self.enxame.dataset[0][:1])
+        self.window_train_loss.adjust(self.swarm.dataset[0][:1])
 
         for start in range(0, len(data_train), self.entropy_window):
             try:
@@ -134,14 +123,9 @@ class PSO_ELM_anomaly():
         self.entropy_mean = np.mean([v for v in self.svd_entropies if pd.notna(v)])
 
         # identify no drift for the next iter
-        self.mudanca_ocorreu = False
+        self.drift_detected = False
 
     def predict(self, stream):
-        '''
-        Metodo para executar o procedimento do algoritmo
-        :param grafico: variavel booleana para ativar ou desativar o grafico
-        :return: retorna 5 variaveis: [falsos_alarmes, atrasos, falta_deteccao, MAPE, tempo_execucao]
-        '''
         stream = stream['value'].to_numpy()
         try:
             current_entropy = ant.svd_entropy(stream, normalize=True)
@@ -154,17 +138,14 @@ class PSO_ELM_anomaly():
         offset = self.predictions_df.shape[0]
 
         for j in range(len(stream)):
-            loss = mean_absolute_error(stream[j:j + 1], self.predicao)
-            self.erro_stream += loss
+            loss = mean_absolute_error(stream[j:j + 1], self.prediction)
+            self.error_stream += loss
 
-            # adicionando o novo dado a window de predicao
-            self.window_predicao.add_window(stream[j])
-
-            # realizando a nova predicao com a nova window de predicao
-            predicao = self.enxame.predict(self.window_predicao.data)
+            self.window_prediction.add_window(stream[j])
+            prediction = self.swarm.predict(self.window_prediction.data)
 
             self.predictions_df = self.predictions_df.append({
-                'predictions': predicao,
+                'predictions': prediction,
                 'errors': loss
             }, ignore_index=True)
 
@@ -181,65 +162,53 @@ class PSO_ELM_anomaly():
             self.loss_thresholds['fixed'].append(self.error_threshold)
             self.loss_thresholds['dynamic'].append(threshold_adapted)
 
-            if not self.mudanca_ocorreu:
+            if not self.drift_detected:
+                drift = self.b.monitor(self.window_prediction.data, stream[j:j + 1], self.swarm, j)
 
-                #computando o comportamento para a window de predicao, para somente uma instancia - media e desvio padrão
-                mudou = self.b.monitor(self.window_predicao.data, stream[j:j + 1], self.enxame, j)
-
-                if mudou:
+                if drift:
                     self.deteccoes.append(j)
-
-                    #zerando a window de treinamento
-                    self.window_caracteristicas.nullify()
-
-                    #variavel para alterar o fluxo, ir para o periodo de retreinamento
-                    self.mudanca_ocorreu = True
+                    self.window_params.nullify()
+                    self.drift_detected = True
 
             else:
 
-                if len(self.window_caracteristicas.data) < self.n:
-                    #adicionando a nova instancia na window de caracteristicas
-                    self.window_caracteristicas.increment(stream[j])
+                if len(self.window_params.data) < self.n:
+                    self.window_params.increment(stream[j])
 
                 else:
-                    #atualizando o enxame_vigente preditivo
-                    self.enxame = IDPSO_ELM(self.window_caracteristicas.data,
+                    self.swarm = IDPSO_ELM(self.window_params.data,
                                             split_dataset, self.lags,
-                                            self.qtd_neuronios)
-                    self.enxame.set_params(it, self.num_particles,
+                                            self.qtd_neurons)
+                    self.swarm.set_params(it, self.num_particles,
                                            inercia_inicial, inercia_final,
-                                           c1, c2, xmax, crit_parada)
-                    self.enxame.train()
+                                           c1, c2, xmax, crit)
+                    self.swarm.train()
 
-                    #ajustando com os dados finais do treinamento a window de predicao
-                    self.window_predicao = MowingWindow()
-                    self.window_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
-                    self.predicao = self.enxame.predict(self.window_predicao.data)
+                    self.window_prediction = MowingWindow()
+                    self.window_prediction.adjust(self.swarm.dataset[0][(len(self.swarm.dataset[0]) - 1):])
+                    self.prediction = self.swarm.predict(self.window_prediction.data)
 
-                    # atualizando o conceito para a caracteristica de comportamento
-                    self.b = B(self.limite, self.w, self.c)
-                    self.b.record(self.window_caracteristicas.data, self.lags, self.enxame)
+                    self.b = B(self.limit, self.w, self.c)
+                    self.b.record(self.window_params.data, self.lags, self.swarm)
 
-                    #variavel para voltar para o loop principal
-                    self.mudanca_ocorreu = False
+                    self.drift_detected = False
 
         return self.results['fixed'][-len(stream):], self.results['dynamic'][-len(stream):]
 
-    def plot(self, stream, labels, ts, dataset, datatype, threshold_type='dynamic'):
-        MAE = self.erro_stream / len(stream)
-        largura_deteccoes = 2
+    def plot(self, datatest, threshold_type='dynamic'):
+        stream, labels = datatest['value'].tolist(), datatest['is_anomaly'].tolist()
+        MAE = self.error_stream / len(stream)
+        wd = 2
 
-        localizacao_legenda = (1.13, 0.85)
+        legend_place = (1.13, 0.85)
 
         eixox = [0, len(stream)]
         erro_eixoy = [0, 0.2]
         x_intervalos = range(eixox[0], eixox[1], 900)
 
-        # criando uma figura
         figura = plt.figure()
         figura.suptitle('PSO-ELM', fontsize=11, fontweight='bold')
 
-        # definindo a figura 1 com a previsao e os dados reais
         grafico1 = figura.add_subplot(2, 10, (1, 9))
         grafico1.plot(stream, label='Original Serie', color='blue')
         grafico1.plot(self.predictions_df['predictions'], label='Forecast', color='red')
@@ -249,38 +218,36 @@ class PSO_ELM_anomaly():
         else:
             grafico1.set_title("Real dataset and forecast | MAE: %.3f |" % (MAE))
 
-        grafico1.axvline(-1000, linewidth=largura_deteccoes,
+        grafico1.axvline(-1000, linewidth=wd,
                          linestyle='dashed', label='Anomaly Batch', color='orange')
         for i in range(len(self.anomalous_batches)):
             counter = self.anomalous_batches[i]
             grafico1.axvline(counter,
-                             linewidth=largura_deteccoes, linestyle='dashed', color='green')
+                             linewidth=wd, linestyle='dashed', color='green')
 
-        # colocando legenda e definindo os eixos do grafico
         plt.ylabel('Observations')
         plt.xlabel('Time')
         grafico1.axis([eixox[0], eixox[1],
                        min(np.min(stream), np.min(self.predictions_df['predictions'])) - .05,
                        max(np.max(stream), np.max(self.predictions_df['predictions'])) + .05])
         offset = len(stream) - len(labels)
-        grafico1.legend(loc='best', bbox_to_anchor=localizacao_legenda, ncol=1,
+        grafico1.legend(loc='best', bbox_to_anchor=legend_place, ncol=1,
                         fancybox=True, shadow=True)
         plt.xticks(x_intervalos, rotation=45)
 
-        # definindo a figura 2 com o erro de previsao
         grafico2 = figura.add_subplot(3, 10, (21, 29))
         grafico2.plot(self.predictions_df['errors'],
                       label='Forecasting Error', color='blue', zorder=1)
         grafico2.plot(list(range(len(self.loss_thresholds[threshold_type]))),
-                      self.loss_thresholds[threshold_type], linewidth=largura_deteccoes,
+                      self.loss_thresholds[threshold_type], linewidth=wd,
                       linestyle='dashed', color='m', label='Loss threshold')
         grafico2.set_title("Forecasting Error")
 
-        grafico2.axvline(-1000, linewidth=largura_deteccoes,
+        grafico2.axvline(-1000, linewidth=wd,
                          linestyle='dashed', label='Anomaly Batch', color='green')
         for i in range(len(self.anomalous_batches)):
             counter = self.anomalous_batches[i]
-            grafico2.axvline(counter, linewidth=largura_deteccoes, linestyle='dashed', color='green')
+            grafico2.axvline(counter, linewidth=wd, linestyle='dashed', color='green')
 
         fp_idx = [offset + x for x in range(len(labels))
                   if labels[x] == 0 and self.results[threshold_type][x] == 1]
@@ -302,5 +269,5 @@ class PSO_ELM_anomaly():
                            np.max(self.loss_thresholds[threshold_type]) + 0.05)])
         plt.xticks(x_intervalos, rotation=45)
 
-        plt.savefig(f'results/imgs/{dataset}/{datatype}/pso-elm_{ts.replace(".csv", "")}_full.png')
+        plt.savefig(f'results/imgs/{self.dataset}/{self.datatype}/pso-elm_{self.filename}_forecasting_loss.png')
 

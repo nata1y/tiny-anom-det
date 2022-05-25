@@ -8,15 +8,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import scipy.stats as st
 import tensorflow as tf
-from keras.engine.input_layer import InputLayer
 from scipy import stats
-from sklearn.cluster import DBSCAN
 from tensorflow import keras
 from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDistributed
 from tensorflow.keras.models import Sequential
 import antropy as ant
 
-from drift_detectors.ECDD import ECDD
+from drift_detectors.ecdd import ECDD
 from settings import entropy_params
 from utils import create_dataset
 
@@ -43,7 +41,7 @@ class LSTM_autoencoder:
         self.magnitude = magnitude
         self.datatype = datatype
         self.dataset = dataset
-        self.filename = filename
+        self.filename = filename.replace(".csv", "")
         self.loss = []
         self.predicted = []
         self.window = X_shape[0]
@@ -53,8 +51,12 @@ class LSTM_autoencoder:
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
         self.data_for_retrain = []
+        self.dynamic_thresholds = []
 
-    def fit(self, X_train, y_train, Xf, phase='train'):
+    def fit(self, data_train, phase='fit'):
+        X_train, y_train = create_dataset(data_train[['value']], data_train[['value']], self.window)
+        data_train = data_train['value'].tolist()
+
         self.history = self.model.fit(X_train, y_train, epochs=100, batch_size=32,
                     callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, mode='min')],
                                       validation_split=0.1,  shuffle=False)
@@ -65,11 +67,12 @@ class LSTM_autoencoder:
 
         self.svd_entropies = []
 
+        # record entropy if in initial phase
         if phase != 'retrain':
-            for start in range(0, len(Xf), self.window):
+            for start in range(0, len(data_train), self.window):
                 try:
                     self.svd_entropies.append(
-                        ant.svd_entropy(Xf[start:start + self.window], normalize=True))
+                        ant.svd_entropy(data_train[start:start + self.window], normalize=True))
                 except:
                     pass
             self.boundary_bottom = np.mean([v for v in self.svd_entropies if pd.notna(v)]) - \
@@ -77,6 +80,7 @@ class LSTM_autoencoder:
             self.boundary_up = np.mean([v for v in self.svd_entropies if pd.notna(v)]) + \
                                self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
 
+        # record value for drift detection
         self.drift_detector.record(np.mean(self.history.history['loss']),
                                    np.std(self.history.history['loss']))
 
@@ -87,7 +91,10 @@ class LSTM_autoencoder:
 
         return pred_thr
 
-    def predict(self, X, timestamp):
+    def predict(self, window):
+        X = window['value'].to_numpy().reshape(1, len(window['value'].tolist()), 1)
+        timestamp = window['timestamp'].tolist()
+
         mean_val = np.mean(X.flatten())
         Xf = funcy.lflatten(X.flatten())
         for idx in range(self.window - X.shape[1]):
@@ -108,25 +115,31 @@ class LSTM_autoencoder:
             if response == self.drift_detector.drift:
                 self.drift_alerting_cts += 1
 
+        # use static threshold
         y_pred1 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
+
+        # use dynamic threshold
         if self.boundary_bottom <= entropy <= self.boundary_up:
             y_pred2 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
+            self.dynamic_thresholds += [self.threshold] * len(y_pred2)
         else:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
             extent = 1.5 - max(extent, 1.0 - extent)
             threshold_adapted = self.threshold * extent
             y_pred2 = [0 if loss[idx] <= threshold_adapted else 1 for idx in range(len(loss))]
+            self.dynamic_thresholds += [threshold_adapted] * len(y_pred2)
 
         self.loss += loss.flatten().tolist()
         self.predicted += y_pred1
+
+        # perform drift adaptation
         if self.drift_alerting_cts >= self.drift_count_limit:
             if len(self.data_for_retrain) > self.window * 5:
                 print('Drift occured')
                 start_time = time.time()
                 tmp = pd.DataFrame(columns=['values'])
                 tmp['values'] = self.data_for_retrain
-                X, y = create_dataset(tmp, tmp, self.window)
-                self.fit(X, y, self.data_for_retrain, 'retrain')
+                self.fit(tmp, 'retrain')
                 end_time = time.time()
                 diff = end_time - start_time
                 print(f"Trained lstm for {diff}")
@@ -137,7 +150,7 @@ class LSTM_autoencoder:
                 print('?&', len(self.data_for_retrain))
         return y_pred1, y_pred2
 
-    def plot(self, datatest):
+    def plot(self, datatest, threshold_type='dynamic'):
         loss_df = pd.DataFrame([])
         loss_df['value'] = self.loss
         loss_df['timestamp'] = datatest['timestamp'].tolist()
@@ -167,6 +180,6 @@ class LSTM_autoencoder:
         if x_fn:
             fig.add_trace(go.Scatter(x=x_fn, y=y_fn, name='FN', mode="markers"))
         fig.update_layout(showlegend=True, title='Test loss vs. Threshold')
-        fig.write_image(f'results/imgs/{self.dataset}/{self.datatype}/lstm_{self.filename.replace(".csv", "")}_full.png')
+        fig.write_image(f'results/imgs/{self.dataset}/{self.datatype}/lstm_{self.filename}_reconstruction_loss.png')
 
         fig.data = []

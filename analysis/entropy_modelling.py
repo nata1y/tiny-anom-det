@@ -47,7 +47,7 @@ def plot_entropy_per_ts(entropy_name, batches_anomalies,
                      boundary_up,
                      color='b', alpha=.5)
     plt.axvline(x=int(len(entropies) // 2), color='orange',
-                linestyle='--', label='train-test separation')
+                linestyle='--', label='fit-test separation')
     plt.axhline(y=boundary_bottom, color='y', linestyle='--')
     plt.axhline(y=boundary_up, color='y', linestyle='--')
 

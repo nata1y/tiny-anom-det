@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import datetime
 
 
-def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, datatype, drift_windows):
+def confusion_visualization(data_test, pred_val, dataset, datatype, filename, modelname):
+    x, y, true_val = data_test['timestamp'].tolist(), data_test['value'].tolist(), data_test['is_anomaly'].tolist()
     try:
         x = [datetime.datetime.strptime(x, '%m/%d/%Y %H:%M') for x in x]
     except:
@@ -26,11 +27,9 @@ def confusion_visualization(x, y, true_val, pred_val, dataset, name, filename, d
                        Line2D([0], [0], marker='o', color='r', markersize=5, label='FP'),
                        Line2D([0], [0], marker='o', color='y', markersize=5, label='FN')]
 
-    for wd in drift_windows:
-        ax.axvspan(wd[0], wd[1], alpha=0.3, color='red')
     ax.legend(handles=legend_elements, loc='best')
 
-    pyplot.savefig(f'results/imgs/{dataset}/{datatype}/{name}_{filename}.png')
+    pyplot.savefig(f'results/imgs/{dataset}/{datatype}/{modelname}_{filename}.png')
     pyplot.clf()
     pyplot.close('all')
     plt.close('all')

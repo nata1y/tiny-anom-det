@@ -7,7 +7,7 @@ Modified 23.05.2022
 '''
 
 from models.pso_elm.utils.partition_series import SeriesPreprocessor
-from drift_detectors.ECDD import ECDD
+from drift_detectors.ecdd import ECDD
 from sklearn.metrics import mean_absolute_error
 import numpy as np
 

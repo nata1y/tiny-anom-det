@@ -4,19 +4,13 @@ import os
 
 import funcy
 import mock
-from sklearn import preprocessing
 from skopt.callbacks import EarlyStopper
-
-from analysis.deprecated.ts_features import analyse_dataset_catch22, analyse_dataset_fforma
-from models.pso_elm.pso_elm_anomaly import PSO_ELM_anomaly
-from models.nets import tf
 from utils import plot_general
 from sklearn.metrics import hamming_loss, cohen_kappa_score
 from skopt import gp_minimize
 
 from sklearn.metrics import precision_recall_fscore_support
 
-from utils import create_dataset
 from models.sr.spectral_residual import DetectMode
 import pandas as pd
 import datetime
@@ -27,14 +21,6 @@ from settings import entropy_params, data_in_memory_sz
 
 
 root_path = os.getcwd()
-le = preprocessing.LabelEncoder().fit([-1, 1])
-data_test = None
-can_model = True
-traintime = 0
-predtime = 0
-bwa = []
-batched_f1_score = []
-batch_metrices = []
 
 
 class Stopper(EarlyStopper):
@@ -48,7 +34,7 @@ class Stopper(EarlyStopper):
 def fit_base_model(model_params, for_optimization=True):
     global can_model, traintime, predtime, batched_f1_score, batch_metrices, bwa, dataset
 
-    # 50% train-test split
+    # 50% fit-test split
     if dataset == 'kpi':
         data_train = data
         if not for_optimization:
@@ -67,14 +53,14 @@ def fit_base_model(model_params, for_optimization=True):
     start = time.time()
     # create models with hyper-parameters
     if name == 'sarima':
-        model = SARIMA(dataset, type, model_params[0], model_params[1])
+        model = SARIMA(dataset, type, filename, model_params[0], model_params[1])
     elif name == 'lstm':
-        model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename.replace(".csv", ""),
+        model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename,
                                  magnitude=model_params[0])
     elif name == 'pso-elm':
-        # take pso-elm train size as variable
+        # take pso-elm fit size as variable
         n = min(model_params[0], data_train.shape[0])
-        model = PSO_ELM_anomaly(n=n,
+        model = PSO_ELM_anomaly(dataset, type, filename, n=n,
                                 magnitude=model_params[1],
                                 entropy_window=anomaly_window,
                                 error_threshold=model_params[2])
@@ -82,17 +68,15 @@ def fit_base_model(model_params, for_optimization=True):
     if name == 'sarima':
 
         start_time = time.time()
-        model.fit(copy.deepcopy(data_train[['timestamp', 'value']]), dataset)
+        model.fit(data_train)
         end_time = time.time()
 
         diff = end_time - start_time
         print(f"Trained model {name} on {filename} for {diff}")
 
     elif name == 'lstm':
-        X, y = create_dataset(data_train[['value']], data_train[['value']], anomaly_window)
-        print('shape1', X.shape, y.shape)
         start_time = time.time()
-        model.fit(X, y, data_train['value'].tolist())
+        model.fit(data_train)
         end_time = time.time()
 
         diff = end_time - start_time
@@ -102,7 +86,8 @@ def fit_base_model(model_params, for_optimization=True):
         model = SpectralResidual(series=data_train[['value', 'timestamp']],
                                  threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
-                                 detect_mode=DetectMode.anomaly_only, dataset=dataset, datatype=type)
+                                 detect_mode=DetectMode.anomaly_only, dataset=dataset,
+                                 datatype=type, filename=filename)
         model.fit()
         end_time = time.time()
 
@@ -110,8 +95,9 @@ def fit_base_model(model_params, for_optimization=True):
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'pso-elm':
         start_time = time.time()
-        model = PSO_ELM_anomaly(n=model_params[0], magnitude=model_params[1], error_threshold=model_params[2])
-        model.train(data_train[-model.n:])
+        model = PSO_ELM_anomaly(n=model_params[0], magnitude=model_params[1], error_threshold=model_params[2],
+                                dataset=dataset, datatype=type, filename=filename)
+        model.fit(data_train[-model.n:])
         end_time = time.time()
 
         diff = end_time - start_time
@@ -125,13 +111,11 @@ def fit_base_model(model_params, for_optimization=True):
     batch_metrices_hamming_entropy = []
     batch_metrices_f1_e = []
     batch_metrices_f1_noe = []
-    y_pred_total = []
     y_pred_total_noe, y_pred_total_e = [], []
     batches_with_anomalies = []
     idx = 0
 
     pred_time = []
-    drift_windows = []
 
     for start in range(0, data_test.shape[0], step):
         try:
@@ -142,15 +126,12 @@ def fit_base_model(model_params, for_optimization=True):
             X, y = window['value'], window['is_anomaly']
             if y.tolist():
                 if name in ['sarima']:
-                    if for_optimization:
-                        y_pred_noe, y_pred_e = model.predict(window[['timestamp', 'value']], optimization=True)
-                    else:
-                        y_pred_noe, y_pred_e = model.predict(window[['timestamp', 'value']])
+                    y_pred_noe, y_pred_e = model.predict(window, optimization=for_optimization)
 
                 elif name == 'sr':
-                    model.__series__ = data_in_memory[['value', 'timestamp']]
+                    model.__series__ = data_in_memory
                     try:
-                        res = model.detect_dynamic_threshold(data_in_memory[['value', 'timestamp']])
+                        res = model.predict(data_in_memory)
                         y_pred_noe = [1 if x else 0 for x in res['isAnomaly'].tolist()]
 
                         y_pred_e = [1 if x else 0 for x in res['isAnomaly_e'].tolist()]
@@ -160,8 +141,7 @@ def fit_base_model(model_params, for_optimization=True):
                         y_pred_e = [0 for _ in range(window.shape[0])]
 
                 elif name == 'lstm':
-                    y_pred_noe, y_pred_e = model.predict(X.to_numpy().reshape(1, len(window['value'].tolist()), 1),
-                                           window['timestamp'])
+                    y_pred_noe, y_pred_e = model.predict(window)
                     y_pred_noe, y_pred_e = y_pred_noe[:window.shape[0]], y_pred_e[:window.shape[0]]
                 elif name == 'pso-elm':
                     y_pred_noe, y_pred_e = model.predict(window[['value', 'timestamp']])
@@ -185,7 +165,7 @@ def fit_base_model(model_params, for_optimization=True):
     if not for_optimization:
         print('Plotting..........')
         # plot_general(model, dataset, type, name, data_test,
-        #              y_pred_total_e, filename, drift_windows)
+        #              y_pred_total_e, filename)
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -239,9 +219,9 @@ if __name__ == '__main__':
     continuer = True
     for dataset, type in [('NAB', 'windows'), ('yahoo', 'real'),
                           ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'),
-                          ('yahoo', 'A4Benchmark'), ('kpi', 'train')]:
+                          ('yahoo', 'A4Benchmark'), ('kpi', 'fit')]:
         # options:
-        # ('kpi', 'train'), ('NAB', 'windows'), ('NAB', 'relevant'),
+        # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
         # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
 
         anomaly_window = step = entropy_params[f'{dataset}_{type}']['window']

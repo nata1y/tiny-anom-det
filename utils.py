@@ -219,7 +219,7 @@ def adjust_range(val, oper, factor):
 def preprocess_kpi(cwd):
     dataset, type = 'kpi', 'synthetic'
 
-    for t in ['train', 'test']:
+    for t in ['fit', 'test']:
         train_data_path = cwd + '\\' + dataset + '\\' + t + '\\'
         for filename in os.listdir(train_data_path):
             f = os.path.join(train_data_path, filename)
@@ -355,29 +355,20 @@ def drift_metrics(y_true, y_pred):
 
 
 # general plotting function for anomaly detectors
-def plot_general(model, dataset, type, name, data_test, y_pred_total, filename, drift_windows):
+def plot_general(model, dataset, datatype, name, data_test, y_pred_total, filename):
     try:
-        confusion_visualization(data_test['timestamp'].tolist(), data_test['value'].tolist(),
-                                data_test['is_anomaly'].tolist(), y_pred_total,
-                                dataset, name, filename.replace('.csv', ''), type, drift_windows)
+        confusion_visualization(data_test, y_pred_total, dataset, datatype, filename.replace('.csv', ''), name)
     except Exception as e:
         raise e
 
     try:
-        if name == 'sarima':
-            model.plot(data_test[['timestamp', 'value']], filename, data_test, drift_windows)
-        elif name == 'lstm':
-            model.plot(data_test)
-        elif name == 'sr':
-            model.plot(dataset, type, filename, data_test, drift_windows)
-        elif name == 'pso-elm':
-            model.plot(data_test['value'].tolist(), data_test['is_anomaly'].tolist(), filename, dataset, type)
+        model.plot(data_test)
     except Exception as e:
         raise e
 
 
 def avg_batch_f1():
-    for dataset, subsets in [('kpi', ['train'])]:
+    for dataset, subsets in [('kpi', ['fit'])]:
         for tss in subsets:
             for suf in ['e', 'noe']:
                 d = entropy_params[f'{dataset}_{tss}']['window']

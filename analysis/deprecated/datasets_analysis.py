@@ -32,7 +32,7 @@ def compare_dataset_properties():
             max_ucr = pd.read_csv(f'results/ts_properties/ucr_ts_features_c22.csv')[feature].max()
             print(max_ucr)
             for dataset in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
-                        ('NAB', 'relevant'), ('kpi', 'train'), ('ucr', 'ts')]:
+                        ('NAB', 'relevant'), ('kpi', 'fit'), ('ucr', 'ts')]:
 
                 data = pd.read_csv(f'results/ts_properties/{dataset[0]}_{dataset[1]}_features_c22.csv')
                 transform = pd.DataFrame([])
@@ -65,7 +65,7 @@ def calculate_dists():
     df = pd.DataFrame([])
     idx = 0
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
-           ('NAB', 'relevant'), ('kpi', 'train')]
+           ('NAB', 'relevant'), ('kpi', 'fit')]
     exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
 
     for feature in features:
@@ -118,7 +118,7 @@ def dist_between_sets():
     dists_p_f = pd.read_csv(f'results/ts_properties/features_was_dist_c22.csv')
     df = pd.DataFrame([])
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
-           ('NAB', 'relevant'), ('kpi', 'train')]
+           ('NAB', 'relevant'), ('kpi', 'fit')]
     dists = itertools.combinations(dfs, 2)
 
     idx = 0
@@ -193,7 +193,7 @@ def compare_feature_samples_from_same_dist():
     df = pd.DataFrame([])
     idx = 0
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
-           ('NAB', 'relevant'), ('kpi', 'train')]
+           ('NAB', 'relevant'), ('kpi', 'fit')]
     exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
 
     for feature in features:
@@ -231,7 +231,7 @@ def check_dist_sample():
     idx = 0
     for dataset in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'),
                     ('yahoo', 'A4Benchmark'),
-                    ('NAB', 'relevant'), ('kpi', 'train')]:
+                    ('NAB', 'relevant'), ('kpi', 'fit')]:
         for feature in df.columns:
             if feature not in ['ts', 'Unnamed: 0', 'Unnamed: 0.1']:
                 transform.loc[idx, 'Dataset'] = dataset[0] + '_' + dataset[1] if dataset[0] != 'yahoo' else dataset[1]
@@ -258,7 +258,7 @@ def check_low_variance_features():
     df = pd.DataFrame([])
     idx = 0
     dfs = [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
-           ('NAB', 'relevant'), ('kpi', 'train'), ('ucr', 'ts')]
+           ('NAB', 'relevant'), ('kpi', 'fit'), ('ucr', 'ts')]
     exclude = ['ts', 'Unnamed: 0', 'arch_acf', 'garch_acf', 'arch_r2', 'garch_r2', 'hw_alpha', 'hw_beta', 'hw_gamma']
 
     for dataset1 in dfs:
