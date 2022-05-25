@@ -9,73 +9,56 @@ import numpy as np
 
 class MowingWindow:
     def __init__(self):
-        '''
-        Classe para instanciar a janela deslizante 
-        '''
         self.data = []
         self.rest_data = []
         
     def adjust(self, values):
         '''
-        Metodo para ajustar o tamanho da jenela deslizante 
-        :param values: valores para serem inseridos na janela
+        Method to adjust the size of the sliding wdw
         '''
         
         self.data = values
         self.rest_data = np.append([0], values)
     
-    def Add_janela(self, valor):
-        '''
-        Metodo para inserir na janela deslizante, o valor mais antigo sera excluido 
-        :param valor: valor de entrada
-        '''
-        self.data = self.Fila(self.data, valor)
-        self.rest_data = self.Fila(self.rest_data, valor)
+    def add_window(self, val):
+        self.data = self.queue(self.data, val)
+        self.rest_data = self.queue(self.rest_data, val)
         
-    def Fila(self, lista, valor):
-        '''
-        metodo para adicionar um novo valor a um ndarray
-        :param: lista: lista que será acrescida
-        :param: valor: valor a ser adicionado
-        :return: retorna a lista com o valor acrescido
-        '''
+    def queue(self, input, val):
         
-        if(len(lista) == 1):
-            aux2 = len(lista[0])
+        if len(input) == 1:
+            aux2 = len(input[0])
             aux = [0] * aux2
-            aux[len(lista[0])-1] = valor
-            aux[:len(aux)-1] = lista[0][1:]
-            lista[0] = aux
-            lista[0] = np.asarray(lista[0])
-            lista[0] = np.column_stack(lista[0])
+            aux[len(input[0]) - 1] = val
+            aux[:len(aux)-1] = input[0][1:]
+            input[0] = aux
+            input[0] = np.asarray(input[0])
+            input[0] = np.column_stack(input[0])
             
-            return lista
+            return input
             
         else:
-            aux2 = len(lista)
+            aux2 = len(input)
             aux = [0] * aux2
-            aux[len(lista)-1] = valor
-            aux[:len(aux)-1] = lista[1:]
-            lista = aux
-            lista = np.asarray(lista)
-            lista = np.column_stack(lista)
+            aux[len(input) - 1] = val
+            aux[:len(aux)-1] = input[1:]
+            input = aux
+            input = np.asarray(input)
+            input = np.column_stack(input)
             
-            return lista
+            return input
         
-    def Increment_Add(self, valor):
+    def increment(self, val):
         '''
-        Metodo para inserir mais dados na janela deslizante 
-        :param valor: valor de entrada
+        Add data ro sliding wdw
         '''
-        
         if len(self.data) > 0:
-            aux = np.asarray(self.data)
             aux = [0] * (len(self.data) + 1)
             aux[:len(self.data)] = self.data
-            aux[len(self.data)] = valor
+            aux[len(self.data)] = val
             self.data = aux
         else:
-            self.data.append(valor)
+            self.data.append(val)
     
-    def Zerar_Janela(self):
+    def nullify(self):
         self.data = []

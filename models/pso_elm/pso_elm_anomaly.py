@@ -39,7 +39,7 @@ xmax = 1
 c1 = 2
 c2 = 2
 crit_parada = 2
-divisao_dataset = [0.8, 0.2, 0]
+split_dataset = [0.8, 0.2, 0]
 
 
 class PSO_ELM_anomaly():
@@ -49,13 +49,13 @@ class PSO_ELM_anomaly():
         construtor do algoritmo que detecta a mudanca de ambiente por meio do comportamento das particulas
         :param dataset: serie temporal que o algoritmo vai executar
         :param qtd_train_inicial: quantidade de exemplos para o treinamento inicial
-        :param tamanho_janela: tamanho da janela de caracteristicas para identificar a mudanca
+        :param tamanho_window: tamanho da window de caracteristicas para identificar a mudanca
         :param n: tamanho do n para reavaliar o metodo de deteccao
-        :param lags: quantidade de lags para modelar as entradas da RNA
+        :param lags: quantidade de lags para modelar as input da RNA
         :param qtd_neuronios: quantidade de neuronios escondidos da RNA
         :param num_particles: numero de particulas para serem usadas no IDPSO
         :param n_particulas_comportamento: numero de particulas para serem monitoradas na detecccao de mudanca
-        :param limite: contador para verificar a mudanca
+        :param limite: counter para verificar a mudanca
         '''
 
         self.n = n
@@ -89,23 +89,23 @@ class PSO_ELM_anomaly():
 
         start_time = time.time()
         # criando e treinando um enxame_vigente para realizar as previsões
-        self.enxame = IDPSO_ELM(data_train, divisao_dataset, self.lags, self.qtd_neuronios)
-        self.enxame.Parametros_IDPSO(it, self.num_particles, inercia_inicial, inercia_final, c1, c2, xmax, crit_parada)
-        self.enxame.Treinar()
+        self.enxame = IDPSO_ELM(data_train, split_dataset, self.lags, self.qtd_neuronios)
+        self.enxame.set_params(it, self.num_particles, inercia_inicial, inercia_final, c1, c2, xmax, crit_parada)
+        self.enxame.train()
 
-        # ajustando com os dados finais do treinamento a janela de predicao
-        self.janela_predicao = MowingWindow()
-        self.janela_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
-        self.predicao = self.enxame.Predizer(self.janela_predicao.data)
+        # ajustando com os dados finais do treinamento a window de predicao
+        self.window_predicao = MowingWindow()
+        self.window_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
+        self.predicao = self.enxame.predict(self.window_predicao.data)
 
-        # janela com o atual conceito, tambem utilizada para armazenar os dados de retreinamento
-        self.janela_caracteristicas = MowingWindow()
-        self.janela_caracteristicas.adjust(data_train)
+        # window com o atual conceito, tambem utilizada para armazenar os dados de retreinamento
+        self.window_caracteristicas = MowingWindow()
+        self.window_caracteristicas.adjust(data_train)
 
         # ativando o sensor de comportamento de acordo com a
-        # primeira janela de caracteristicas para media e desvio padrão
+        # primeira window de caracteristicas para media e desvio padrão
         self.b = B(self.limite, self.w, self.c)
-        self.b.record(self.janela_caracteristicas.data, self.lags, self.enxame)
+        self.b.record(self.window_caracteristicas.data, self.lags, self.enxame)
         end_time = time.time()
 
         self.traintime = end_time - start_time
@@ -114,8 +114,8 @@ class PSO_ELM_anomaly():
         self.predictions_df['predictions'] = []
         self.predictions_df['errors'] = []
 
-        self.janela_train_loss = MowingWindow()
-        self.janela_train_loss.adjust(self.enxame.dataset[0][:1])
+        self.window_train_loss = MowingWindow()
+        self.window_train_loss.adjust(self.enxame.dataset[0][:1])
 
         for start in range(0, len(data_train), self.entropy_window):
             try:
@@ -157,11 +157,11 @@ class PSO_ELM_anomaly():
             loss = mean_absolute_error(stream[j:j + 1], self.predicao)
             self.erro_stream += loss
 
-            # adicionando o novo dado a janela de predicao
-            self.janela_predicao.Add_janela(stream[j])
+            # adicionando o novo dado a window de predicao
+            self.window_predicao.add_window(stream[j])
 
-            # realizando a nova predicao com a nova janela de predicao
-            predicao = self.enxame.Predizer(self.janela_predicao.data)
+            # realizando a nova predicao com a nova window de predicao
+            predicao = self.enxame.predict(self.window_predicao.data)
 
             self.predictions_df = self.predictions_df.append({
                 'predictions': predicao,
@@ -183,42 +183,42 @@ class PSO_ELM_anomaly():
 
             if not self.mudanca_ocorreu:
 
-                #computando o comportamento para a janela de predicao, para somente uma instancia - media e desvio padrão
-                mudou = self.b.monitor(self.janela_predicao.data, stream[j:j + 1], self.enxame, j)
+                #computando o comportamento para a window de predicao, para somente uma instancia - media e desvio padrão
+                mudou = self.b.monitor(self.window_predicao.data, stream[j:j + 1], self.enxame, j)
 
                 if mudou:
                     self.deteccoes.append(j)
 
-                    #zerando a janela de treinamento
-                    self.janela_caracteristicas.Zerar_Janela()
+                    #zerando a window de treinamento
+                    self.window_caracteristicas.nullify()
 
                     #variavel para alterar o fluxo, ir para o periodo de retreinamento
                     self.mudanca_ocorreu = True
 
             else:
 
-                if len(self.janela_caracteristicas.data) < self.n:
-                    #adicionando a nova instancia na janela de caracteristicas
-                    self.janela_caracteristicas.Increment_Add(stream[j])
+                if len(self.window_caracteristicas.data) < self.n:
+                    #adicionando a nova instancia na window de caracteristicas
+                    self.window_caracteristicas.increment(stream[j])
 
                 else:
                     #atualizando o enxame_vigente preditivo
-                    self.enxame = IDPSO_ELM(self.janela_caracteristicas.data,
-                                            divisao_dataset, self.lags,
+                    self.enxame = IDPSO_ELM(self.window_caracteristicas.data,
+                                            split_dataset, self.lags,
                                             self.qtd_neuronios)
-                    self.enxame.Parametros_IDPSO(it, self.num_particles,
-                                                 inercia_inicial, inercia_final,
-                                                 c1, c2, xmax, crit_parada)
-                    self.enxame.Treinar()
+                    self.enxame.set_params(it, self.num_particles,
+                                           inercia_inicial, inercia_final,
+                                           c1, c2, xmax, crit_parada)
+                    self.enxame.train()
 
-                    #ajustando com os dados finais do treinamento a janela de predicao
-                    self.janela_predicao = MowingWindow()
-                    self.janela_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
-                    self.predicao = self.enxame.Predizer(self.janela_predicao.data)
+                    #ajustando com os dados finais do treinamento a window de predicao
+                    self.window_predicao = MowingWindow()
+                    self.window_predicao.adjust(self.enxame.dataset[0][(len(self.enxame.dataset[0]) - 1):])
+                    self.predicao = self.enxame.predict(self.window_predicao.data)
 
                     # atualizando o conceito para a caracteristica de comportamento
                     self.b = B(self.limite, self.w, self.c)
-                    self.b.record(self.janela_caracteristicas.data, self.lags, self.enxame)
+                    self.b.record(self.window_caracteristicas.data, self.lags, self.enxame)
 
                     #variavel para voltar para o loop principal
                     self.mudanca_ocorreu = False
@@ -252,8 +252,8 @@ class PSO_ELM_anomaly():
         grafico1.axvline(-1000, linewidth=largura_deteccoes,
                          linestyle='dashed', label='Anomaly Batch', color='orange')
         for i in range(len(self.anomalous_batches)):
-            contador = self.anomalous_batches[i]
-            grafico1.axvline(contador,
+            counter = self.anomalous_batches[i]
+            grafico1.axvline(counter,
                              linewidth=largura_deteccoes, linestyle='dashed', color='green')
 
         # colocando legenda e definindo os eixos do grafico
@@ -279,8 +279,8 @@ class PSO_ELM_anomaly():
         grafico2.axvline(-1000, linewidth=largura_deteccoes,
                          linestyle='dashed', label='Anomaly Batch', color='green')
         for i in range(len(self.anomalous_batches)):
-            contador = self.anomalous_batches[i]
-            grafico2.axvline(contador, linewidth=largura_deteccoes, linestyle='dashed', color='green')
+            counter = self.anomalous_batches[i]
+            grafico2.axvline(counter, linewidth=largura_deteccoes, linestyle='dashed', color='green')
 
         fp_idx = [offset + x for x in range(len(labels))
                   if labels[x] == 0 and self.results[threshold_type][x] == 1]

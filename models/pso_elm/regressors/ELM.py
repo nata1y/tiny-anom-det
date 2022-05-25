@@ -3,195 +3,113 @@
 Created on 31 de jan de 2017
 
 @author: gusta
+Modified 23.05.2022
+@author nata1y
 '''
 
 import numpy as np
 from sklearn.metrics import mean_absolute_error
-from models.pso_elm.utils.partition_series import Particionar_series
+from models.pso_elm.utils.partition_series import SeriesPreprocessor
 import matplotlib.pyplot as plt
 
 
-#criando o construtor da classe ELMRegressor
-class ELMRegressor():
-    def __init__(self, neuronios_escondidos = None):
-        '''
-        Construtor do algoritmo ELM
-        :param neuronios_escondidos: quantidade de neuronios para a camada escondida
-        '''
-        self.neuronios_escondidos = neuronios_escondidos
+class ELMRegressor:
+    def __init__(self, hidden_neurons=None):
+        self.hidden_neurons = hidden_neurons
         
-        self.train_entradas = []
-        self.train_saidas = []
-        self.val_entradas = []
-        self.val_saidas = []
-        self.teste_entradas = []
-        self.teste_saidas = []
-        
+        self.train_start = []
+        self.train_end = []
+        self.val_start = []
+        self.val_end = []
+        self.test_start = []
+        self.test_end = []
 
-    #treinamento do ELM
+    def fit(self, start_info, end_info, weights=None):
+        '''
+        Method for training ELM through pseudo-inverse
+        :param start_info: inputs to network training, this data is an array with a defined lag amount
+        :param end_info: outputs for network training, this data is a vector with the outputs corresponding to the inputs
+        :return: returns output weights of the net
+        '''
+        # stacking two arrays of the same dimension
+        # if it is an array, the first column is given by the values of the array,
+        # while the second is filled in with 1s
+        start_info = np.column_stack([start_info, np.ones([start_info.shape[0], 1])])
 
-    def Treinar(self, Entradas, Saidas, pesos = None):
-        '''
-        Metodo para treinar a ELM por meio da pseudo-inversa
-        :param Entradas: entradas para o treinamento da rede, esses dados sao uma matriz com uma quantidade de lags definida
-        :param Saidas: saidas para o treinamento da rede, esses dados sao um vetor com as saidas correspodentes as entradas
-        :return: retorna os pesos de saida da rede treinada
-        '''
-        
-        #Entradas é uma lista de arrays com os padroes de entrada, matriz com os lags definidos 
-        #Saidas é a saida, que possui a mesma quantidade de linhas que a matriz Entradas 
-        #Entradas.shape[0] retorna a quantidade de linhas
-        #Entradas.shape[1] retorna a quantidade de colunas
-        
-        #empilhando dois arrays de mesma dimensao
-        #se for um array, a primeira coluna é dada pelos valores do array, enquanto que a segunda é cheia de numeros uns
-        Entradas = np.column_stack([Entradas, np.ones([Entradas.shape[0], 1])])
-        
-        #definindo os pesos iniciais aleatoriamente
-        #cria uma matriz com numeros aleatorios de tamanho linha x coluna
-        #pesos iniciais correspondentes a entrada
-        
-        if(np.any(pesos) == None):
-            self.pesos_iniciais = np.random.randn(Entradas.shape[1], self.neuronios_escondidos)
+        # setting the starting weights randomly
+        # creates an array with random numbers of Row x column size
+        # initial weights corresponding to input
+        if not np.any(weights):
+            self.initial_weights = np.random.randn(start_info.shape[1], self.hidden_neurons)
         else:
-            self.pesos_iniciais = pesos
+            self.initial_weights = weights
         
-        #np.dot - multiplicação de matrizes
-        #np.tan - tangente hiperbolica
-        #np.linalg.pinv - pseudo inversa 
+        # computing the activation neurons with the hyperbolic function
+        G = np.tanh(start_info.dot(self.initial_weights))
         
-        # computacao a ativacao neuronios com a funcao hiperbolica
-        G = np.tanh(Entradas.dot(self.pesos_iniciais))
-        
-        # computase a previsao para os dados de entrada
-        self.pesos_saidas = np.linalg.pinv(G).dot(Saidas)
+        # computes the prediction for the input data
+        self.end_weights = np.linalg.pinv(G).dot(end_info)
       
-    def Predizer(self, Entradas):
+    def predict(self, start_info):
         '''
-        Metodo para realizar a previsao de acordo com um conjunto de entrada
-        :param Entradas: padroes que serao usados para realizar a previsao
-        :return: retorna a previsao para o conjunto de padroes inseridos
+        perform predictions
         '''
-        
-        #empilhando dois arrays em colunas, o primeiro é dado pelo array Entradas e a segunda coluna é feita de numeros 1
-        Entradas = np.column_stack([Entradas, np.ones([Entradas.shape[0],1])])
-        
-        #computando pelos neuronios iniciais
-        G = np.tanh(Entradas.dot(self.pesos_iniciais))
+        start_info = np.column_stack([start_info, np.ones([start_info.shape[0], 1])])
+
+        # computed by entry neurons
+        G = np.tanh(start_info.dot(self.initial_weights))
             
-        #computando pelos neuronios de saida
-        return G.dot(self.pesos_saidas)
+        # computed by output neurons
+        return G.dot(self.end_weights)
     
-    def PredizerPhaseAdjustment(self, Entradas):
-        '''
-        Metodo para realizar a previsao de acordo com um conjunto de entrada
-        :param Entradas: padroes que serao usados para realizar a previsao
-        :return: retorna a previsao para o conjunto de padroes inseridos
-        '''
+    def adjust_phase(self, start_info):
+        # initial predictions
+        prediction = self.predict(start_info)
         
-        # fazendo a previsao inicial
-        previsao = self.Predizer(Entradas)
+        # phase adjustment
+        adjustment = np.column_stack([start_info[:, 1:], prediction])
         
-        # fazendo o ajuste de fase
-        adjustment = np.column_stack([Entradas[:,1:], previsao])
-        
-        # previsao com o ajuste
-        return self.Predizer(adjustment)
+        # final forecast with adjustment
+        return self.predict(adjustment)
     
-    def Otimizar_rede(self, neuronios_max, lista):
+    def optimize_network(self, max_neurons, optimization_data):
         '''
-        Metodo para otimizar a arquitetura da ELM
-        :param neuronios_max: quantidade maxima de neuronios que serao variados
-        :param lista: esse parametro é uma lista com os seguintes dados [treinamento_entrada, treinamento_saida, validacao_entrada, validacao_saida]]
+        Method to optimize ELM
+        :param max_neurons: maximum amount of neurons that is tuned
+        :param optimization_data: this parameter is a list with the following data
+        [info_start, info_end, val_start, val_end]]
         '''
-        
-        BEST = []
         MAE_TEST_MINS = []
-        
-        #range (start, stop, step)
-        for M in range(1, neuronios_max, 1):
-            
-            #variaveis para treinamento e teste
-            #MAES_TRAIN = []
+        n_min = None
+
+        for M in range(1, max_neurons, 1):
             MAES_TEST = []
             
             print("Training with %s neurons..."%M)
-            
-            #variando os pesos iniciais
+
             for i in range(10):
-                #classe recebendo uma quantidade M de neuronios_max
                 ELM = ELMRegressor(M)
-                #ajustando o ELM para o conjunto de treinamento
-                ELM.Treinar(lista[0], lista[1])
-                #realizando a previsão para o treinamento
-                prediction = ELM.Predizer(lista[0])
-                #adicionando na lista o MAE do treinamento
-                #MAES_TRAIN.append(mean_absolute_error(lista[1], prediction))
-        
-                #realizando a previsão para o teste
-                prediction = ELM.Predizer(lista[2])
-                #adicionando na lista o MAE do teste
-                MAES_TEST.append(mean_absolute_error(lista[3], prediction))
-                
-            #salvando o menor MAE obtido no teste    
+                ELM.fit(optimization_data[0], optimization_data[1])
+                prediction = ELM.predict(optimization_data[2])
+                MAES_TEST.append(mean_absolute_error(optimization_data[3], prediction))
+
             MAE_TEST_MINS.append(np.mean(MAES_TEST))
             n_min = min(MAE_TEST_MINS)
             n_pos = MAE_TEST_MINS.index(n_min)
-            self.neuronios_escondidos = n_pos
-        
-        #printando o menor erro obtido
+            self.hidden_neurons = n_pos
+
         print("Minimum MAE ELM =", n_min)
 
-    def Tratamento_dados(self, serie, divisao, lags):
-        #dividindo a serie para particionar
-        particao = Particionar_series(serie, divisao, lags)
-        
-        #tratamento dos dados
-        [train_entrada, train_saida] = particao.Part_train()
-        [val_entrada, val_saida] = particao.Part_val()
-        [teste_entrada, teste_saida] = particao.Part_test()
-        
-        #transformação das listas em arrays
-        self.train_entradas = np.asarray(train_entrada)
-        self.train_saidas = np.asarray(train_saida)
-        self.val_entradas = np.asarray(val_entrada)
-        self.val_saidas = np.asarray(val_saida)
-        self.teste_entradas = np.asarray(teste_entrada)
-        self.teste_saidas = np.asarray(teste_saida)
+    def handle_data(self, serie, split, lags):
+        partition = SeriesPreprocessor(serie, split, lags)
 
-def main():
-    
-    #load da serie
-    import pandas as pd
-    dataset = pd.read_csv("../series/WINJ19_M5_201903061300_201904051750.csv", header=None, sep='\t')[5][1:].values
-    dataset = np.array(dataset, dtype=float)
-    particao = Particionar_series(dataset, [0.0, 0.0, 0.0], 4, norm=True)
-    
-    # dividindo os dados entre treinamento e teste
-    from sklearn.model_selection import train_test_split
-    X_train, X_test, y_train, y_test = train_test_split(particao.matriz_entrada, particao.vetor_saida, test_size=0.1, shuffle=False, stratify=None)
-    
-    # treinando da forma convencional
-    ELM = ELMRegressor(10)
-    ELM.Treinar(X_train, y_train)
-    
-    # realizando a previsao no teste da forma convencional
-    previsao_teste = ELM.Predizer(X_test)
-    MAE = mean_absolute_error(y_test, previsao_teste)
-    print('ELM Prediction - Test MAE: ', MAE)
-    plt.plot(previsao_teste, label="Prediction")
-    
-    # realizando a previsao no teste da forma convencional
-    previsao_teste = ELM.PredizerPhaseAdjustment(X_test)
-    MAE = mean_absolute_error(y_test, previsao_teste)
-    print('ELM Prediction Adjusted - Test MAE: ', MAE)
-    plt.plot(previsao_teste, label="Prediction Adjusted")
-    
-    # plotando os valores reais
-    plt.plot(y_test, label="Real")
-    plt.legend()
-    plt.show()
+        [train_start, train_end] = partition.part_train()
+        [val_start, val_end] = partition.part_val()
+        [test_start, test_end] = partition.part_test()
 
-    
-if __name__ == "__main__":
-    main()
+        self.train_start = np.asarray(train_start)
+        self.train_end = np.asarray(train_end)
+        self.val_start = np.asarray(val_start)
+        self.val_end = np.asarray(val_end)
+        self.test_start = np.asarray(test_start)
+        self.test_end = np.asarray(test_end)

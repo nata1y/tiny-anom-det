@@ -2,125 +2,87 @@
 import numpy as np
 import copy
 
-def Janela_tempo(serie, janela):
-    '''
-    metodo que transforma um vetor em uma matriz com os dados de entrada e um vetor com as respectivas saidas 
-    :param serie: serie temporal que sera remodelada
-    :return: retorna duas variaveis, uma matriz com os dados de entrada e um vetor com os dados de saida: matriz_entrada, vetor_saida
-    '''
+
+def window_time(serie, window):
+    sz_mat = len(serie) - window
     
-    tamanho_matriz = len(serie) - janela 
+    input_mat = []
+    for i in range(sz_mat):
+        input_mat.append([0.0] * window)
     
-    matriz_entrada = []
-    for i in range(tamanho_matriz):
-        matriz_entrada.append([0.0] * janela)
-    
-    vetor_saida = []
-    for i in range(len(matriz_entrada)):
-        matriz_entrada[i] = serie[i:i+janela]
-        vetor_saida.append(serie[i+janela])
+    output_vector = []
+    for i in range(len(input_mat)):
+        input_mat[i] = serie[i:i+window]
+        output_vector.append(serie[i+window])
         
-    return np.asarray(matriz_entrada), np.asarray(vetor_saida)
+    return np.asarray(input_mat), np.asarray(output_vector)
 
     
-class Particionar_series:
-    def __init__(self, serie=[0], divisao=[0,0,0], janela=5, norm=False):
-        '''
-        classe para manipular a serie temporal
-        :param serie: vetor, com a serie temporal utilizada para treinamento 
-        :param divisao: lista com porcentagens, da seguinte forma [pct_treinamento_entrada, pct_treinamento_saida, pct_validacao_entrada, pct_validacao_saida]
-        :param janela: quantidade de lags usados para modelar os padroes de entrada da ELM
-        '''
-        
+class SeriesPreprocessor:
+    def __init__(self, serie=[0], split=[0, 0, 0], window=5, norm=False):
         self.min = 0
         self.max = 0
         self.serie = serie
         
-        if(norm):
-            self.serie = self.Normalizar(serie)
+        if norm:
+            self.serie = self.normalize(serie)
         
-        self.janela = janela
-        
-        if(len(divisao) != 3):
-            return "Erro no tamanho da particao!"
+        self.window = window
             
-        self.pct_train = divisao[0]
-        self.pct_val = divisao[1]
-        self.pct_test = divisao[2]
+        self.pct_train = split[0]
+        self.pct_val = split[1]
+        self.pct_test = split[2]
        
         self.index_train = 0
         self.index_val = 0
         
-        if(len(self.serie)>1):
-            self.matriz_entrada, self.vetor_saida = Janela_tempo(self.serie, self.janela)
+        if len(self.serie) > 1:
+            self.input_mat, self.output_vector = window_time(self.serie, self.window)
         
-    def Part_train(self):
+    def part_train(self):
         '''
         method that returns only the training part of the time series
-        :return: retorna uma lista com: [entrada_train, saida_train]
         '''
         
-        self.index_train = self.pct_train * len(self.vetor_saida)
+        self.index_train = self.pct_train * len(self.output_vector)
         self.index_train = int(round(self.index_train))
         
-        entrada_train = np.asarray(self.matriz_entrada[:self.index_train])
-        saida_train = np.asarray(self.vetor_saida[:self.index_train])
+        input_train = np.asarray(self.input_mat[:self.index_train])
+        output_train = np.asarray(self.output_vector[:self.index_train])
         
-        return entrada_train, saida_train
+        return input_train, output_train
     
-    def Part_val(self):
-        '''
-        metodo que retorna somente a parte de validacao da serie temporal
-        :return: retorna uma lista com: [entrada_val, saida_val]
-        '''
-        
-        self.index_val = self.pct_val * len(self.vetor_saida)
+    def part_val(self):
+        self.index_val = self.pct_val * len(self.output_vector)
         self.index_val = int(round(self.index_val))
         self.index_val = self.index_train + self.index_val
         
-        entrada_val = np.asarray(self.matriz_entrada[self.index_train:self.index_val])
-        saida_val = np.asarray(self.vetor_saida[self.index_train:self.index_val])
+        input_val = np.asarray(self.input_mat[self.index_train:self.index_val])
+        output_val = np.asarray(self.output_vector[self.index_train:self.index_val])
         
-        return entrada_val, saida_val
+        return input_val, output_val
     
-    def Part_test(self):
-        '''
-        metodo que retorna somente a parte de teste da serie temporal
-        :return: retorna uma lista com: [entrada_teste, saida_teste]
-        '''
-          
-        entrada_teste = np.asarray(self.matriz_entrada[self.index_val:])
-        saida_teste = np.asarray(self.vetor_saida[self.index_val:])
+    def part_test(self):
+        input_teste = np.asarray(self.input_mat[self.index_val:])
+        output_teste = np.asarray(self.output_vector[self.index_val:])
         
-        return entrada_teste, saida_teste
+        return input_teste, output_teste
     
-    def Normalizar(self, serie):
-        '''
-        metodo que normaliza a serie temporal em um intervalo de [0, 1] 
-        :param serie: serie temporal que sera remodelada
-        :return: retorna a serie normalizada 
-        '''
-        
+    def normalize(self, serie):
         self.min = copy.deepcopy(np.min(serie))
         self.max = copy.deepcopy(np.max(serie))
         
         serie_norm = []
         for e in serie:
-            valor = (e - self.min)/(self.max - self.min)
-            serie_norm.append(valor)
+            val = (e - self.min)/(self.max - self.min)
+            serie_norm.append(val)
         
         return serie_norm  
      
-    def Desnormalizar(self, serie):
-        '''
-        metodo que retira a normalizacao da serie e a coloca em escala original 
-        :param serie: serie temporal que sera remodelada
-        :return: retorna a serie na escala original  
-        '''
-
+    def denormalize(self, serie):
         serie_norm = []
         for e in serie:
-            valor = e * (self.max - self.min) + self.min
-            serie_norm.append(valor)
+            val = e * (self.max - self.min) + self.min
+            serie_norm.append(val)
 
         return serie_norm  

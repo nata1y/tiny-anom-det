@@ -8,3 +8,5 @@ entropy_params = {'kpi_train': {'factor': 2.5, 'window': 35},
                   }
 
 data_in_memory_sz = 3000
+
+mi = 100

@@ -2,18 +2,13 @@
 Created on 10 de mar de 2017
 @author: gusta
 Modified 23.05.2022
-@au
+@author nata1y
 '''
 import numpy as np
 
+
 class ECDD:
     def __init__(self, Lambda, w, l):
-        '''
-        Método para criar um modelo do ECDD
-        :param Lambda: float com o valor de lambda
-        :param w: float com o nivel de alarme
-        :param l: float com o nivel de deteccao
-        '''
         self.lmbd = Lambda
         self.w = w
         self.l = l
@@ -21,25 +16,21 @@ class ECDD:
         self.deviation_zero = 0
         self.deviation_z = 0
         self.zt = 0
-        self.nodrift = "Nada"
-        self.alert = "Alerta"
-        self.drift = "Mudanca"
+        self.nodrift = "No"
+        self.alert = "Alert"
+        self.drift = "Drift"
         self.sensor_drift = True
 
     def record(self, MI0, SIGMA0):
         '''
-        Este método tem por objetivo armazenar um conceito de um erro
-        :param MI0: média dos erros
-        :param SIGMA0: desvio dos erros
+        Record error concept
         '''
         self.mean_zero = MI0
         self.deviation_zero = SIGMA0
 
     def update_ewma(self, error, t):
         '''
-        método para atualizar o ewma conforme o erro no tempo t
-        :param erro: double com o erro para ser verificado
-        :param t: instante de tempo
+        method to update ewma with error at time t
         '''
 
         #calculando a média movel
@@ -61,7 +52,7 @@ class ECDD:
 
     def monitor(self):
         '''
-        método para monitor a condicao do detector
+        method to monitor the condition of the detector
         '''
 
         if self.zt > self.mean_zero + (self.l * self.deviation_z):
