@@ -159,8 +159,14 @@ class LSTM_autoencoder:
         fig = go.Figure()
 
         fig.add_trace(go.Scatter(x=arranged_loss.index.tolist(), y=arranged_loss['value'].tolist(), name='Test loss'))
-        fig.add_trace(go.Scatter(x=arranged_loss.index.tolist(), y=[self.threshold for _ in range(arranged_loss.shape[0])],
-                                 name='Threshold'))
+        if threshold_type == 'dynamic':
+            fig.add_trace(go.Scatter(x=arranged_loss.index.tolist(),
+                                     y=self.dynamic_thresholds,
+                                     name='Threshold'))
+        else:
+            fig.add_trace(go.Scatter(x=arranged_loss.index.tolist(),
+                                     y=[self.threshold for _ in range(arranged_loss.shape[0])],
+                                     name='Threshold'))
 
         x_fp, y_fp = [], []
         x_fn, y_fn = [], []
