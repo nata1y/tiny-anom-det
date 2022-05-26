@@ -60,7 +60,7 @@ class B:
         measures = []
 
         for i in range(swarm.num_particles):
-            prediction = swarm.sensores[i].predict(start)
+            prediction = swarm.sensors[i].predict(start)
             MAE = mean_absolute_error(end, prediction)
             measures.append(MAE)
 
@@ -77,7 +77,7 @@ class B:
         measures = []
 
         for i in range(swarm.num_particles):
-            prediction = swarm.sensores[i].predict(data)
+            prediction = swarm.sensors[i].predict(data)
             MAE = mean_absolute_error(real, prediction)
             measures.append(MAE)
 

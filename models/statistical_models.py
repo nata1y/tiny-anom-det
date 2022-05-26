@@ -78,11 +78,13 @@ class SARIMA:
             return data
 
     def fit(self, data_train, dataset=None):
-        data = copy.deepcopy(data_train[['timestamp', 'value']])
         if dataset != 'retrain':
+            data = copy.deepcopy(data_train[['timestamp', 'value']])
             self.form_entropy(data)
-            self.dataset = dataset
             data = self._get_time_index(data)
+        else:
+            data = data_train
+
         data = data[-5000:]
         period = 12
 
@@ -143,6 +145,7 @@ class SARIMA:
                                    np.std([v for v in collected_entropies if pd.notna(v)])
 
     def predict(self, newdf, optimization=False, in_dp=False):
+        newdf = newdf[['timestamp', 'value']]
         y_pred = []
         y_pred_e = []
         newdf = self._get_time_index(newdf)

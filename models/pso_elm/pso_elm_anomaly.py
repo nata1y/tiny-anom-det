@@ -29,7 +29,7 @@ import numpy as np
 import antropy as ant
 from scipy import stats
 from sklearn.metrics import mean_absolute_error
-from settings import, inercia_inicial, c1, c2, crit, inercia_final, xmax, split_dataset, it
+from settings import inercia_inicial, c1, c2, crit, inercia_final, xmax, split_dataset, it
 
 
 class PSO_ELM_anomaly:

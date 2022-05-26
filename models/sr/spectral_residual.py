@@ -154,19 +154,27 @@ class SpectralResidual:
         self.history.set_index('timestamp', inplace=True)
 
         fig.add_trace(go.Scatter(x=self.history.index, y=self.history['score'].tolist(), name='Residual scores'))
-        fig.add_trace(
-            go.Scatter(x=self.history.index, y=[self.__threshold__ for _ in range(self.history.shape[0])],
-                       name='Threshold'))
+        if threshold_type == 'dynamic':
+            fig.add_trace(
+                go.Scatter(x=self.history.index,
+                           y=self.dynamic_thresholds,
+                           name='Threshold'))
+        else:
+            fig.add_trace(
+                go.Scatter(x=self.history.index,
+                           y=[self.__threshold__ for _ in range(self.history.shape[0])],
+                           name='Threshold'))
 
         x_fp, y_fp = [], []
         x_fn, y_fn = [], []
         datatest = datatest[~datatest.index.duplicated(keep='first')]
-        for tm, row in self.history.iterrows():
+        for idx, (tm, row) in enumerate(self.history.iterrows()):
+            threshold = self.__threshold__ if threshold_type != 'dynamic' else self.dynamic_thresholds[idx]
             if tm in datatest.index:
-                if row['score'] > self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 0:
+                if row['score'] > threshold and datatest.loc[tm, 'is_anomaly'] == 0:
                     x_fp.append(tm)
                     y_fp.append(row['score'])
-                if row['score'] < self.__threshold__ and datatest.loc[tm, 'is_anomaly'] == 1:
+                if row['score'] < threshold and datatest.loc[tm, 'is_anomaly'] == 1:
                     x_fn.append(tm)
                     y_fn.append(row['score'])
 

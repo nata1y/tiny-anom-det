@@ -54,6 +54,7 @@ class LSTM_autoencoder:
         self.dynamic_thresholds = []
 
     def fit(self, data_train, phase='fit'):
+        data_train = data_train[-3000:]
         X_train, y_train = create_dataset(data_train[['value']], data_train[['value']], self.window)
         data_train = data_train['value'].tolist()
 
@@ -138,7 +139,7 @@ class LSTM_autoencoder:
                 print('Drift occured')
                 start_time = time.time()
                 tmp = pd.DataFrame(columns=['values'])
-                tmp['values'] = self.data_for_retrain
+                tmp['value'] = self.data_for_retrain
                 self.fit(tmp, 'retrain')
                 end_time = time.time()
                 diff = end_time - start_time

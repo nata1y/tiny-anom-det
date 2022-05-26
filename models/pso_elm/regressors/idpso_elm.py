@@ -146,11 +146,11 @@ class IDPSO_ELM:
                 value_c1 = (i.best[j] - i.position[j])
                 value_c2 = (self.gbest.position[j] - i.position[j])
                 
-                inercia = (i.inercia * i.velocidade[j])
+                inercia = (i.inercia * i.velocity[j])
                 cognitive = ((i.c1 * random.random()) * value_c1)
                 group = ((i.c2 * random.random()) * value_c2)
               
-                i.velocidade[j] = inercia + cognitive + group
+                i.velocity[j] = inercia + cognitive + group
                 
                 if i.velocity[j] >= self.xmax:
                     i.velocity[j] = self.xmax
@@ -160,7 +160,7 @@ class IDPSO_ELM:
     def update_particles(self):
         for i in self.particles:
             for j in range(len(i.position)):
-                i.position[j] = i.position[j] + i.velocidade[j]
+                i.position[j] = i.position[j] + i.velocity[j]
                 
                 if i.position[j] >= self.posMax:
                     i.position[j] = self.posMax
@@ -330,7 +330,7 @@ class IDPSO_ELM:
             self.particles[j].position = np.random.randn(1, self.dimentions)
             self.particles[j].position = self.particles[j].position[0]
             self.particles[j].fitness = self.objective(self.particles[j].position)
-            self.particles[j].velocidade = array([0.0 for i in range(self.dimentions)])
+            self.particles[j].velocity = array([0.0 for i in range(self.dimentions)])
             self.particles[j].best = self.particles[j].position
             self.particles[j].fit_best = self.particles[j].fitness
             self.particles[j].c1 = self.c1
