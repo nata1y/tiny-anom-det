@@ -1,4 +1,5 @@
 # twist on https://github.com/RuoyunCarina-D/Anomly-Detection-SARIMA/blob/master/SARIMA.py
+import collections
 import copy
 import datetime
 import itertools
@@ -44,11 +45,17 @@ class SARIMA:
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
         self.use_drift_adaptation = True
+        self.curr_time = 0
+        self.edge_cases = ['occupancy', 'speed', 'TravelTime']
 
     def _check_freq(self, idx):
         if self.freq:
             return self.freq
-        my_freq = idx[1].to_pydatetime() - idx[0].to_pydatetime()
+        if any(v in self.filename for v in self.edge_cases):
+            # return minutely frequency for edge cases with many missing and screwed values
+            return 'T'
+        else:
+            my_freq = idx[1].to_pydatetime() - idx[0].to_pydatetime()
         return my_freq
 
     def _get_time_index(self, data):
@@ -59,10 +66,10 @@ class SARIMA:
             return data
         if self.dataset in ['NAB']:
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], infer_datetime_format=True)
-            # preprocessing depending on TS.....
             data.set_index('timestamp', inplace=True)
             data = data[~data.index.duplicated(keep='first')]
             self.freq = self._check_freq(data.index)
+            data.freq = self.freq
             data = data.asfreq(self.freq, method='ffill')
             return data
         if self.dataset in ['kpi']:
@@ -86,6 +93,7 @@ class SARIMA:
         else:
             data = data_train
 
+        # Limit latest data to fit in memory
         data = data[-5000:]
         period = 12
 
@@ -115,14 +123,12 @@ class SARIMA:
                         self.model = tmp_mdl
 
                 except Exception as e:
-                    print(e)
+                    raise e
 
         self.model = self.model.fit()
         loss = [abs(x - y) for x, y in zip(data['value'].tolist(), self.model.get_prediction().predicted_mean)]
         self.drift_detector.record(np.mean(loss), np.std(loss))
-        print(data.tail())
-        print(self.model.fittedvalues.tail())
-        print('=======')
+        self.curr_time += len(loss)
 
     def form_entropy(self, data):
         collected_entropies = []
@@ -145,13 +151,11 @@ class SARIMA:
                                    self.entropy_factor * \
                                    np.std([v for v in collected_entropies if pd.notna(v)])
 
-    def predict(self, newdf, optimization=False, in_dp=False):
+    def predict(self, newdf, optimization=False):
         newdf = newdf[['timestamp', 'value']]
         y_pred = []
         y_pred_e = []
         newdf = self._get_time_index(newdf)
-        print(newdf.head())
-        print('))))))))))))))))))))))))')
 
         try:
             current_entropy = ant.svd_entropy(newdf['value'].to_numpy(), normalize=True)
@@ -171,16 +175,13 @@ class SARIMA:
                     latest_obs = pd.DataFrame([])
                     latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
                     latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
+
                     latest_obs = latest_obs.asfreq(self.freq)
 
-                    if in_dp:
-                        newdf = newdf[0:1]
                     joined = pd.concat([latest_obs, newdf])
                     joined = joined.asfreq(self.freq)
                     self.model = self.model.apply(joined, refit=False)
                 else:
-                    if in_dp:
-                        newdf = newdf[0:1]
                     self.model = self.model.append(newdf)
 
         except ValueError as e:
@@ -192,29 +193,13 @@ class SARIMA:
                 stuffed_value.set_index('timestamp', inplace=True)
                 stuffed_value = stuffed_value[1:-1]
                 newdf = pd.concat([stuffed_value, newdf])
-                if in_dp:
-                    newdf = newdf[0:1]
                 newdf = newdf.asfreq(self.freq)
                 self.model = self.model.append(newdf.astype(float))
-        print(newdf.head())
-        print(self.model.fittedvalues.tail())
-        print('*****************************')
+
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 
-        if not in_dp:
-            print('not in dp')
-            print(pred)
-            self.full_pred.append(pred)
-        else:
-            try:
-                pred_point = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.tolist()[1],
-                                                       dynamic=False, alpha=0.01)
-            except:
-                pred_point = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
-                                                       dynamic=False, alpha=0.01)
-
-            #self.full_pred.append(pred_point)
+        self.full_pred.append(pred)
 
         pred_ci = pred.conf_int()
 
@@ -222,16 +207,10 @@ class SARIMA:
 
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
-                print(idx)
-                print(type(idx))
-                try:
-                    t = datetime.datetime.strptime(str(idx), '%Y-%m-%d %H:%M:%S').timestamp()
-                except:
-                    t = idx
                 error = abs(newdf.loc[idx, 'value'] - pred.predicted_mean.loc[idx])
-                self.drift_detector.update_ewma(error=error, t=t)
+                self.drift_detector.update_ewma(error=error, t=self.curr_time)
+                self.curr_time += 1
                 response = self.drift_detector.monitor()
-                print('**', error, response)
                 if response == self.drift_detector.drift:
                     self.drift_alerting_cts += 1
 
@@ -252,9 +231,7 @@ class SARIMA:
                     else:
                         y_pred_e.append(1)
 
-        # self.latest_train_snippest = pd.concat([self.latest_train_snippest, newdf])[-self.train_size:]
         print('round done')
-        print('++', self.drift_alerting_cts, self.drift_count_limit)
         if self.use_drift_adaptation:
             if self.drift_alerting_cts >= self.drift_count_limit:
                 print('Drift detected: retraining')

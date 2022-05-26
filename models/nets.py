@@ -53,6 +53,7 @@ class LSTM_autoencoder:
         self.data_for_retrain = []
         self.dynamic_thresholds = []
         self.use_drift_adaptation = True
+        self.curr_time = 0
 
     def fit(self, data_train, phase='fit'):
         data_train = data_train[-3000:]
@@ -85,6 +86,7 @@ class LSTM_autoencoder:
         # record value for drift detection
         self.drift_detector.record(np.mean(self.history.history['loss']),
                                    np.std(self.history.history['loss']))
+        self.curr_time = len(self.history.history['loss'].tolist())
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -109,10 +111,8 @@ class LSTM_autoencoder:
         loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
 
         for error, t in zip(loss, timestamp):
-            if isinstance(t, str):
-                t = datetime.strptime(t, '%Y-%m-%d %H:%M:%S').timestamp()
-
-            self.drift_detector.update_ewma(error=error, t=t)
+            self.drift_detector.update_ewma(error=error, t=self.curr_time)
+            self.curr_time += 1
             response = self.drift_detector.monitor()
             if response == self.drift_detector.drift:
                 self.drift_alerting_cts += 1

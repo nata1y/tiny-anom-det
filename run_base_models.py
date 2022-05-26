@@ -26,7 +26,7 @@ root_path = os.getcwd()
 class Stopper(EarlyStopper):
     def __call__(self, result):
         ret = False
-        if result.func_vals[-1] == 0.0 or not can_model:
+        if result.func_vals[-1] == 0.0:
             ret = True
         return ret
 
@@ -105,10 +105,6 @@ def fit_base_model(model_params, for_optimization=True):
     else:
         exit(f'Sorry! Model {name} is not from the collection.')
 
-    batch_metrices_kc = []
-    batch_metrices_kc_entropy = []
-    batch_metrices_hamming = []
-    batch_metrices_hamming_entropy = []
     batch_metrices_f1_e = []
     batch_metrices_f1_noe = []
     y_pred_total_noe, y_pred_total_e = [], []
@@ -152,11 +148,6 @@ def fit_base_model(model_params, for_optimization=True):
                 y_pred_noe = y_pred_noe[:window.shape[0]]
                 y_pred_e = y_pred_e[:window.shape[0]]
 
-                batch_metrices_hamming.append(1.0 - hamming_loss(window['is_anomaly'].tolist(), y_pred_noe))
-                batch_metrices_hamming_entropy.append(1.0 - hamming_loss(window['is_anomaly'].tolist(), y_pred_e))
-                batch_metrices_kc.append(cohen_kappa_score(window['is_anomaly'].tolist(), y_pred_noe))
-                batch_metrices_kc_entropy.append(cohen_kappa_score(window['is_anomaly'].tolist(), y_pred_e))
-
                 end_time = time.time()
                 pred_time.append((end_time - start_time))
         except Exception as e:
@@ -164,8 +155,8 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         print('Plotting..........')
-        # plot_general(model, dataset, type, name, data_test,
-        #              y_pred_total_e, filename)
+        plot_general(model, dataset, type, name, data_test,
+                     y_pred_total_e, filename)
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -217,9 +208,9 @@ if __name__ == '__main__':
        hp = pd.DataFrame([])
 
     continuer = True
-    for dataset, type in [('NAB', 'windows'), ('yahoo', 'real'),
+    for dataset, type in [('NAB', 'windows'), ('yahoo', 'real'), ('kpi', 'train'),
                           ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'),
-                          ('yahoo', 'A4Benchmark'), ('kpi', 'fit')]:
+                          ('yahoo', 'A4Benchmark')]:
         # options:
         # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
         # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
@@ -248,7 +239,7 @@ if __name__ == '__main__':
                                           not in stats_full['dataset'].tolist()):
 
                     data = pd.read_csv(f)
-                    print(filename)
+                    print('Working with current time series:', filename)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
                     data.drop_duplicates(subset=['timestamp'], keep=False, inplace=True)
 
@@ -260,36 +251,36 @@ if __name__ == '__main__':
                             lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
 
                     try:
-                        ################ Bayesian optimization ###################################################
-                        if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
-                            print(bo_space)
-                            try:
-                                bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                                                        random_state=3, verbose=True, x0=def_params)
-                            except ValueError as e:
-                                # error is rised when function yields constant value and does not converge
-                                bo_result = mock.Mock()
-                                bo_result.x = def_params
+                        # ################ Bayesian optimization ###################################################
+                        # if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
+                        #     print(bo_space)
+                        #     try:
+                        #         bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                        #                                 random_state=3, verbose=True, x0=def_params)
+                        #     except ValueError as e:
+                        #         # error is rised when function yields constant value and does not converge
+                        #         bo_result = mock.Mock()
+                        #         bo_result.x = def_params
+                        #
+                        #     print(f"Found hyper parameters for {name}: {bo_result.x}")
+                        #
+                        #     if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
+                        #         hp = hp.append({
+                        #             'filename': filename.replace('.csv', ''),
+                        #             'model': name,
+                        #             'hp': bo_result.x
+                        #         }, ignore_index=True)
+                        #
+                        #         hp.to_csv('hyperparams.csv', index=False)
+                        # else:
+                        #     bo_result = mock.Mock()
+                        #     bo_result.x = ast.literal_eval(
+                        #         hp[(hp['filename'] == filename.replace('.csv', ''))
+                        #            & (hp['model'] == name)]['hp'].tolist()[0])
 
-                            print(f"Found hyper parameters for {name}: {bo_result.x}")
-
-                            if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
-                                hp = hp.append({
-                                    'filename': filename.replace('.csv', ''),
-                                    'model': name,
-                                    'hp': bo_result.x
-                                }, ignore_index=True)
-
-                                hp.to_csv('hyperparams.csv', index=False)
-                        else:
-                            bo_result = mock.Mock()
-                            bo_result.x = ast.literal_eval(
-                                hp[(hp['filename'] == filename.replace('.csv', ''))
-                                   & (hp['model'] == name)]['hp'].tolist()[0])
-
-                        # bo_result = mock.Mock()
-                        # bo_result.x = def_params
+                        bo_result = mock.Mock()
+                        bo_result.x = def_params
                         fit_base_model(bo_result.x, for_optimization=False)
 
                     except Exception as e:
-                        pass
+                        raise e
