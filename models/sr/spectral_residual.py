@@ -67,6 +67,7 @@ class SpectralResidual:
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
         self.dynamic_thresholds = []
+        self.use_drift_adapttaion = False
 
     def fit(self):
         self.svd_entropies = []
@@ -126,12 +127,14 @@ class SpectralResidual:
                 t = datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S').timestamp()
             else:
                 t = row['timestamp']
-            self.drift_detector.update_ewma(error=row['score'], t=t)
-            response = self.drift_detector.monitor()
-            if response == self.drift_detector.drift:
-                self.drift_alerting_cts += 1
-            if self.drift_alerting_cts == self.drift_count_limit:
-                pass
+
+            if self.use_drift_adaptation:
+                self.drift_detector.update_ewma(error=row['score'], t=t)
+                response = self.drift_detector.monitor()
+                if response == self.drift_detector.drift:
+                    self.drift_alerting_cts += 1
+                if self.drift_alerting_cts == self.drift_count_limit:
+                    pass
 
         if entropy < self.boundary_bottom or entropy > self.boundary_up:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0

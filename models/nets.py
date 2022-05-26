@@ -52,6 +52,7 @@ class LSTM_autoencoder:
         self.drift_count_limit = drift_count_limit
         self.data_for_retrain = []
         self.dynamic_thresholds = []
+        self.use_drift_adaptation = True
 
     def fit(self, data_train, phase='fit'):
         data_train = data_train[-3000:]
@@ -134,21 +135,22 @@ class LSTM_autoencoder:
         self.predicted += y_pred1
 
         # perform drift adaptation
-        if self.drift_alerting_cts >= self.drift_count_limit:
-            if len(self.data_for_retrain) > self.window * 5:
-                print('Drift occured')
-                start_time = time.time()
-                tmp = pd.DataFrame(columns=['values'])
-                tmp['value'] = self.data_for_retrain
-                self.fit(tmp, 'retrain')
-                end_time = time.time()
-                diff = end_time - start_time
-                print(f"Trained lstm for {diff}")
-                self.data_for_retrain = []
-                self.drift_alerting_cts = 0
-            else:
-                self.data_for_retrain += funcy.lflatten(X.flatten())
-                print('?&', len(self.data_for_retrain))
+        if self.use_drift_adaptation:
+            if self.drift_alerting_cts >= self.drift_count_limit:
+                if len(self.data_for_retrain) > self.window * 5:
+                    print('Drift occured')
+                    start_time = time.time()
+                    tmp = pd.DataFrame(columns=['values'])
+                    tmp['value'] = self.data_for_retrain
+                    self.fit(tmp, 'retrain')
+                    end_time = time.time()
+                    diff = end_time - start_time
+                    print(f"Trained lstm for {diff}")
+                    self.data_for_retrain = []
+                    self.drift_alerting_cts = 0
+                else:
+                    self.data_for_retrain += funcy.lflatten(X.flatten())
+                    print('?&', len(self.data_for_retrain))
         return y_pred1, y_pred2
 
     def plot(self, datatest, threshold_type='dynamic'):

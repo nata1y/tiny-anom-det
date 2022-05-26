@@ -72,6 +72,7 @@ class PSO_ELM_anomaly:
         self.datatype = datatype
         self.dataset = dataset
         self.filename = filename.replace(".csv", "")
+        self.use_drift_adaptation = True
 
     def fit(self, data_train):
         data_train = data_train['value'].to_numpy()
@@ -162,36 +163,37 @@ class PSO_ELM_anomaly:
             self.loss_thresholds['fixed'].append(self.error_threshold)
             self.loss_thresholds['dynamic'].append(threshold_adapted)
 
-            if not self.drift_detected:
-                drift = self.b.monitor(self.window_prediction.data, stream[j:j + 1], self.swarm, j)
+            if self.use_drift_adaptation:
+                if not self.drift_detected:
+                    drift = self.b.monitor(self.window_prediction.data, stream[j:j + 1], self.swarm, j)
 
-                if drift:
-                    self.deteccoes.append(j)
-                    self.window_params.nullify()
-                    self.drift_detected = True
-
-            else:
-
-                if len(self.window_params.data) < self.n:
-                    self.window_params.increment(stream[j])
+                    if drift:
+                        self.deteccoes.append(j)
+                        self.window_params.nullify()
+                        self.drift_detected = True
 
                 else:
-                    self.swarm = IDPSO_ELM(self.window_params.data,
-                                            split_dataset, self.lags,
-                                            self.qtd_neurons)
-                    self.swarm.set_params(it, self.num_particles,
-                                           inercia_inicial, inercia_final,
-                                           c1, c2, xmax, crit)
-                    self.swarm.train()
 
-                    self.window_prediction = MowingWindow()
-                    self.window_prediction.adjust(self.swarm.dataset[0][(len(self.swarm.dataset[0]) - 1):])
-                    self.prediction = self.swarm.predict(self.window_prediction.data)
+                    if len(self.window_params.data) < self.n:
+                        self.window_params.increment(stream[j])
 
-                    self.b = B(self.limit, self.w, self.c)
-                    self.b.record(self.window_params.data, self.lags, self.swarm)
+                    else:
+                        self.swarm = IDPSO_ELM(self.window_params.data,
+                                                split_dataset, self.lags,
+                                                self.qtd_neurons)
+                        self.swarm.set_params(it, self.num_particles,
+                                               inercia_inicial, inercia_final,
+                                               c1, c2, xmax, crit)
+                        self.swarm.train()
 
-                    self.drift_detected = False
+                        self.window_prediction = MowingWindow()
+                        self.window_prediction.adjust(self.swarm.dataset[0][(len(self.swarm.dataset[0]) - 1):])
+                        self.prediction = self.swarm.predict(self.window_prediction.data)
+
+                        self.b = B(self.limit, self.w, self.c)
+                        self.b.record(self.window_params.data, self.lags, self.swarm)
+
+                        self.drift_detected = False
 
         return self.results['fixed'][-len(stream):], self.results['dynamic'][-len(stream):]
 

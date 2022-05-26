@@ -43,6 +43,7 @@ class SARIMA:
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
+        self.use_drift_adaptation = True
 
     def _check_freq(self, idx):
         if self.freq:
@@ -254,16 +255,17 @@ class SARIMA:
         # self.latest_train_snippest = pd.concat([self.latest_train_snippest, newdf])[-self.train_size:]
         print('round done')
         print('++', self.drift_alerting_cts, self.drift_count_limit)
-        if self.drift_alerting_cts >= self.drift_count_limit:
-            print('Drift detected: retraining')
-            start_time = time.time()
-            self.drift_alerting_cts = 0
-            self.drift_detector = ECDD(0.2, self.w, self.c)
-            self.drift_detector.record(np.mean(newdf['value'].tolist()), np.std(newdf['value'].tolist()))
-            self.fit(newdf, 'retrain')
-            end_time = time.time()
-            diff = end_time - start_time
-            print(f"Trained sarima for {diff}")
+        if self.use_drift_adaptation:
+            if self.drift_alerting_cts >= self.drift_count_limit:
+                print('Drift detected: retraining')
+                start_time = time.time()
+                self.drift_alerting_cts = 0
+                self.drift_detector = ECDD(0.2, self.w, self.c)
+                self.drift_detector.record(np.mean(newdf['value'].tolist()), np.std(newdf['value'].tolist()))
+                self.fit(newdf, 'retrain')
+                end_time = time.time()
+                diff = end_time - start_time
+                print(f"Trained sarima for {diff}")
 
         return y_pred, y_pred_e
 
