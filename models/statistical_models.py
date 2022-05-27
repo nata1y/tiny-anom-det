@@ -102,7 +102,6 @@ class SARIMA:
             data = data_train
 
         # Limit latest data to fit in memory
-        data = data[-5000:]
         period = 12
 
         # define the p, d and q parameters to take any value between 0 and 2
@@ -131,7 +130,7 @@ class SARIMA:
                         self.model = tmp_mdl
 
                 except Exception as e:
-                    raise e
+                    pass
 
         self.model = self.model.fit()
         loss = [abs(x - y) for x, y in zip(data['value'].tolist(), self.model.get_prediction().predicted_mean)]
@@ -180,14 +179,23 @@ class SARIMA:
         try:
             if not optimization:
                 if self.model.fittedvalues.shape[0] > self.memory_threshold:
+                    print('START')
+                    print(self.model.fittedvalues.tail())
                     latest_obs = pd.DataFrame([])
                     latest_obs['value'] = self.model.fittedvalues.values[-self.result_memory_size:]
                     latest_obs.index = self.model.fittedvalues.index[-self.result_memory_size:]
 
                     latest_obs = latest_obs.asfreq(self.freq)
+                    print(latest_obs.tail())
+                    print('===============')
 
                     joined = pd.concat([latest_obs, newdf])
+                    joined = joined[~joined.index.duplicated(keep='last')]
+                    print(joined.tail())
+                    print(joined.head())
                     joined = joined.asfreq(self.freq)
+                    print('******')
+                    print(joined.head())
                     self.model = self.model.apply(joined, refit=False)
                 else:
                     self.model = self.model.append(newdf)
@@ -204,6 +212,9 @@ class SARIMA:
                 newdf = newdf.asfreq(self.freq)
                 self.model = self.model.append(newdf.astype(float))
 
+        print(newdf.head())
+        print(self.model.fittedvalues.tail())
+        print(self.model.fittedvalues.head())
         pred = self.model.get_prediction(start=newdf.index.min(), end=newdf.index.max(),
                                          dynamic=False, alpha=0.01)
 

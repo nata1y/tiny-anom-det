@@ -19,9 +19,9 @@ models = {
           #                           Integer(low=5, high=1000, name='SCORE_WINDOW'),
           #                           Integer(low=1, high=100, name='sensitivity')],
           #        [THRESHOLD, MAG_WINDOW, SCORE_WINDOW, 99]),
-          'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
-          # 'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
-          #           [1.2, 1.2])
+          # 'lstm': (LSTM_autoencoder, [Real(low=0.5, high=3.0, name='threshold')], [1.5]),
+          'sarima': (SARIMA, [Real(low=0.5, high=5.0, name="conf_top"), Real(low=0.5, high=5.0, name="conf_botton")],
+                    [1.2, 1.2])
           }
 
 

@@ -36,9 +36,10 @@ def fit_base_model(model_params, for_optimization=True):
 
     # 50% fit-test split
     if dataset == 'kpi':
-        data_train = data
+        data_train = copy.deepcopy(data)
         if not for_optimization:
-            global data_test
+            global data_test_
+            data_test = copy.deepcopy(data_test_)
     else:
         data_train, data_test = np.array_split(copy.deepcopy(data), 2)
     model = None
@@ -66,7 +67,6 @@ def fit_base_model(model_params, for_optimization=True):
                                 error_threshold=model_params[2])
 
     if name == 'sarima':
-
         start_time = time.time()
         model.fit(data_train)
         end_time = time.time()
@@ -155,8 +155,9 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         print('Plotting..........')
-        plot_general(model, dataset, type, name, data_test,
-                     y_pred_total_e, filename)
+        if dataset == 'NAB':
+            plot_general(model, dataset, type, name, data_test,
+                         y_pred_total_e, filename)
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -208,9 +209,7 @@ if __name__ == '__main__':
        hp = pd.DataFrame([])
 
     continuer = True
-    for dataset, type in [('NAB', 'windows'), ('yahoo', 'real'), ('kpi', 'train'),
-                          ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'),
-                          ('yahoo', 'A4Benchmark')]:
+    for dataset, type in [('kpi', 'train')]:
         # options:
         # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
         # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
@@ -237,7 +236,6 @@ if __name__ == '__main__':
                 data = pd.read_csv(f)
                 if os.path.isfile(f) and (stats_full.shape[0] == 0 or filename.replace('.csv', '')
                                           not in stats_full['dataset'].tolist()):
-
                     data = pd.read_csv(f)
                     print('Working with current time series:', filename)
                     data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
@@ -249,38 +247,48 @@ if __name__ == '__main__':
                             lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
                         data['timestamp'] = data['timestamp'].apply(
                             lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
+                        data = data[-3000:]
+                        data_test_ = data_test[:25000]
 
-                    try:
-                        # ################ Bayesian optimization ###################################################
-                        # if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
-                        #     print(bo_space)
-                        #     try:
-                        #         bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                        #                                 random_state=3, verbose=True, x0=def_params)
-                        #     except ValueError as e:
-                        #         # error is rised when function yields constant value and does not converge
-                        #         bo_result = mock.Mock()
-                        #         bo_result.x = def_params
-                        #
-                        #     print(f"Found hyper parameters for {name}: {bo_result.x}")
-                        #
-                        #     if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
-                        #         hp = hp.append({
-                        #             'filename': filename.replace('.csv', ''),
-                        #             'model': name,
-                        #             'hp': bo_result.x
-                        #         }, ignore_index=True)
-                        #
-                        #         hp.to_csv('hyperparams.csv', index=False)
-                        # else:
-                        #     bo_result = mock.Mock()
-                        #     bo_result.x = ast.literal_eval(
-                        #         hp[(hp['filename'] == filename.replace('.csv', ''))
-                        #            & (hp['model'] == name)]['hp'].tolist()[0])
+                    if dataset == 'kpi':
+                        try:
+                            bo_result = mock.Mock()
+                            bo_result.x = def_params
+                            # fit_base_model(bo_result.x, for_optimization=True)
+                            fit_base_model(bo_result.x, for_optimization=False)
+                            exit('DONE')
+                        except Exception as e:
+                            raise e
+                    else:
+                        try:
+                            # ################ Bayesian optimization ###################################################
+                            if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
+                                print(bo_space)
+                                try:
+                                    bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                                                            random_state=3, verbose=True, x0=def_params)
+                                except ValueError as e:
+                                    # error is rised when function yields constant value and does not converge
+                                    bo_result = mock.Mock()
+                                    bo_result.x = def_params
 
-                        bo_result = mock.Mock()
-                        bo_result.x = def_params
-                        fit_base_model(bo_result.x, for_optimization=False)
+                                print(f"Found hyper parameters for {name}: {bo_result.x}")
 
-                    except Exception as e:
-                        raise e
+                                if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
+                                    hp = hp.append({
+                                        'filename': filename.replace('.csv', ''),
+                                        'model': name,
+                                        'hp': bo_result.x
+                                    }, ignore_index=True)
+
+                                    hp.to_csv('hyperparams.csv', index=False)
+                            else:
+                                bo_result = mock.Mock()
+                                bo_result.x = ast.literal_eval(
+                                    hp[(hp['filename'] == filename.replace('.csv', ''))
+                                       & (hp['model'] == name)]['hp'].tolist()[0])
+
+                            fit_base_model(bo_result.x, for_optimization=False)
+
+                        except Exception as e:
+                            pass
