@@ -59,6 +59,14 @@ class SARIMA:
         return my_freq
 
     def _get_time_index(self, data):
+        '''
+        SARIMAX works with timestamp, some datasets do not have timestamp but rather integer ids
+        OR they have uneven distribution of timestamps with screwed frequency
+        This method is used for preprocessing data.
+
+        :param data: data used to be feed to darima
+        :return: data with proper frequency
+        '''
         if self.dataset == 'yahoo':
             data.loc[:, 'timestamp'] = pd.to_datetime(data['timestamp'], unit='s')
             data.set_index('timestamp', inplace=True)
@@ -238,7 +246,9 @@ class SARIMA:
                 start_time = time.time()
                 self.drift_alerting_cts = 0
                 self.drift_detector = ECDD(0.2, self.w, self.c)
-                self.drift_detector.record(np.mean(newdf['value'].tolist()), np.std(newdf['value'].tolist()))
+                newdf.dropna(inplace=True)
+                if not newdf.empty:
+                    self.drift_detector.record(np.mean(newdf['value'].tolist()), np.std(newdf['value'].tolist()))
                 self.fit(newdf, 'retrain')
                 end_time = time.time()
                 diff = end_time - start_time
