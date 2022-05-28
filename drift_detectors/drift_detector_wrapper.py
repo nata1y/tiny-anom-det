@@ -19,8 +19,8 @@ class DriftDetectorWrapper:
         '''
         method to update ewma with error at time t
         '''
-
         self.detector.add(error)
+        self.sensor_drift = False
 
     def monitor(self):
         '''
