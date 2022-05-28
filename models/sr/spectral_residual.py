@@ -40,7 +40,7 @@ from settings import anomaly_window, entropy_params, data_in_memory_sz
 class SpectralResidual:
     def __init__(self, series, threshold, mag_window, score_window,
                  sensitivity, detect_mode, dataset,
-                 datatype, filename, batch_size=32, w=0.25, c=0.25, drift_count_limit=10):
+                 datatype, filename, drift_detector, batch_size=32, drift_count_limit=10):
         self.__series__ = series
         self.__values__ = self.__series__['value'].tolist()
         self.__threshold__ = threshold
@@ -62,12 +62,12 @@ class SpectralResidual:
         self.filename = filename.replace(".csv", "")
         self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
-        self.drift_detector = ECDD(0.2, w, c)
+        self.drift_detector = drift_detector
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
         self.dynamic_thresholds = []
-        self.use_drift_adapttaion = False
+        self.use_drift_adaptation = False
 
     def fit(self):
         self.svd_entropies = []
@@ -92,7 +92,7 @@ class SpectralResidual:
         print(self.boundary_up, self.boundary_bottom)
 
         result = self.__anomaly_frame
-        self.drift_detector.record(np.mean(result['score']), np.std(result['score']))
+        self.drift_detector.record(result['score'])
         return result
 
     def _g(self, x1, y1, x2, y2):
@@ -129,7 +129,7 @@ class SpectralResidual:
                 t = row['timestamp']
 
             if self.use_drift_adaptation:
-                self.drift_detector.update_ewma(error=row['score'], t=t)
+                self.drift_detector.update(error=row['score'], t=t)
                 response = self.drift_detector.monitor()
                 if response == self.drift_detector.drift:
                     self.drift_alerting_cts += 1

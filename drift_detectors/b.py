@@ -26,10 +26,10 @@ class B:
         behavior = self.update_behavior(data, lags, swarm)
         self.mean_zero = behavior[0]
         self.deviation_zero = behavior[1]
-        self.ecdd.record(self.mean_zero, self.deviation_zero)
+        self.ecdd.record_emwa(self.mean_zero, self.deviation_zero)
 
     def update_ewma(self, MI0, i):
-        self.ecdd.update_ewma(MI0, i)
+        self.ecdd.update(MI0, i)
 
     def monitor(self, data, real, swarm, i):
         '''
@@ -64,10 +64,7 @@ class B:
             MAE = mean_absolute_error(end, prediction)
             measures.append(MAE)
 
-        behavior = [0] * 2
-        behavior[0] = np.mean(measures)
-        behavior[1] = np.std(measures)
-
+        behavior = (np.mean(measures), np.std(measures))
         return behavior
 
     def compute_current_behavior(self, data, real, swarm):

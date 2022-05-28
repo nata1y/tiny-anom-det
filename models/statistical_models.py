@@ -20,8 +20,8 @@ from utils import adjust_range
 
 class SARIMA:
 
-    def __init__(self, dataset, datatype, filename, conf_top=1.5, conf_bottom=1.5,
-                 train_size=3000, w=0.25, c=0.25, drift_count_limit=10):
+    def __init__(self, dataset, datatype, filename, drift_detector, conf_top=1.5, conf_bottom=1.5,
+                 train_size=3000, drift_count_limit=10):
         self.full_pred = []
         self.mean_fluctuation = []
         self.monitoring_pred = []
@@ -38,9 +38,7 @@ class SARIMA:
         self.filename = filename.replace(".csv", "")
         self.entropy_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.entropy_window = entropy_params[f'{dataset}_{datatype}']['window']
-        self.w = w
-        self.c = c
-        self.drift_detector = ECDD(0.2, w, c)
+        self.drift_detector = drift_detector
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
@@ -134,7 +132,7 @@ class SARIMA:
 
         self.model = self.model.fit()
         loss = [abs(x - y) for x, y in zip(data['value'].tolist(), self.model.get_prediction().predicted_mean)]
-        self.drift_detector.record(np.mean(loss), np.std(loss))
+        self.drift_detector.record(loss)
         self.curr_time += len(loss)
 
     def form_entropy(self, data):
@@ -227,7 +225,7 @@ class SARIMA:
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
                 error = abs(newdf.loc[idx, 'value'] - pred.predicted_mean.loc[idx])
-                self.drift_detector.update_ewma(error=error, t=self.curr_time)
+                self.drift_detector.update(error=error, t=self.curr_time)
                 self.curr_time += 1
                 response = self.drift_detector.monitor()
                 if response == self.drift_detector.drift:
@@ -255,12 +253,15 @@ class SARIMA:
             if self.drift_alerting_cts >= self.drift_count_limit:
                 print('Drift detected: retraining')
                 start_time = time.time()
+                self.fit(newdf, 'retrain')
+
                 self.drift_alerting_cts = 0
-                self.drift_detector = ECDD(0.2, self.w, self.c)
+                self.drift_detector.reset()
                 newdf.dropna(inplace=True)
                 if not newdf.empty:
-                    self.drift_detector.record(np.mean(newdf['value'].tolist()), np.std(newdf['value'].tolist()))
-                self.fit(newdf, 'retrain')
+                    loss = [abs(x - y) for x, y in
+                            zip(newdf['value'].tolist(), self.model.get_prediction().predicted_mean)]
+                    self.drift_detector.record(loss)
                 end_time = time.time()
                 diff = end_time - start_time
                 print(f"Trained sarima for {diff}")

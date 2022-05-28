@@ -52,16 +52,17 @@ def fit_base_model(model_params, for_optimization=True):
         data_in_memory = copy.deepcopy(data_train)
 
     start = time.time()
+    drift_detector = ECDD(0.2, w=0.25, l=0.25)
     # create models with hyper-parameters
     if name == 'sarima':
-        model = SARIMA(dataset, type, filename, model_params[0], model_params[1])
+        model = SARIMA(dataset, type, filename, drift_detector, model_params[0], model_params[1])
     elif name == 'lstm':
-        model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename,
+        model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename, drift_detector,
                                  magnitude=model_params[0])
     elif name == 'pso-elm':
         # take pso-elm fit size as variable
         n = min(model_params[0], data_train.shape[0])
-        model = PSO_ELM_anomaly(dataset, type, filename, n=n,
+        model = PSO_ELM_anomaly(dataset, type, filename,  n=n,
                                 magnitude=model_params[1],
                                 entropy_window=anomaly_window,
                                 error_threshold=model_params[2])
@@ -209,7 +210,7 @@ if __name__ == '__main__':
        hp = pd.DataFrame([])
 
     continuer = True
-    for dataset, type in [('kpi', 'train')]:
+    for dataset, type in [('yahoo', 'synthetic')]:
         # options:
         # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
         # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
@@ -250,7 +251,7 @@ if __name__ == '__main__':
                         data = data[-3000:]
                         data_test_ = data_test[:25000]
 
-                    if dataset == 'kpi':
+                    if dataset == 'NAB':
                         try:
                             bo_result = mock.Mock()
                             bo_result.x = def_params

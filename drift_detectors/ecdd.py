@@ -19,16 +19,25 @@ class ECDD:
         self.nodrift = "No"
         self.alert = "Alert"
         self.drift = "Drift"
-        self.sensor_drift = True
+        self.sensor_drift = False
 
-    def record(self, MI0, SIGMA0):
+    def record(self, data):
+        '''
+        Record error concept
+        '''
+        MI0 = np.mean(data)
+        SIGMA0 = np.std(data)
+        self.mean_zero = MI0
+        self.deviation_zero = SIGMA0
+
+    def record_emwa(self, MI0, SIGMA0):
         '''
         Record error concept
         '''
         self.mean_zero = MI0
         self.deviation_zero = SIGMA0
 
-    def update_ewma(self, error, t):
+    def update(self, error, t):
         '''
         method to update ewma with error at time t
         '''
@@ -62,3 +71,10 @@ class ECDD:
             return self.alert
         else:
             return self.nodrift
+
+    def reset(self):
+        self.mean_zero = 0
+        self.deviation_zero = 0
+        self.deviation_z = 0
+        self.zt = 0
+        self.sensor_drift = False

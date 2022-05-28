@@ -14,6 +14,7 @@ from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDist
 from tensorflow.keras.models import Sequential
 import antropy as ant
 
+from drift_detectors.drift_detector_wrapper import DriftDetectorWrapper
 from drift_detectors.ecdd import ECDD
 from settings import entropy_params
 from utils import create_dataset
@@ -25,8 +26,8 @@ class LSTM_autoencoder:
     model = None
     loss = []
 
-    def __init__(self, X_shape, dataset, datatype, filename, magnitude=1.5,
-                 w=0.25, c=0.25, drift_count_limit=10):
+    def __init__(self, X_shape, dataset, datatype, filename, drift_detector,
+                 magnitude=1.5, drift_count_limit=10):
 
         self.model = Sequential()
         self.model.add(LSTM(128, input_shape=(X_shape[0], X_shape[1])))
@@ -46,7 +47,7 @@ class LSTM_autoencoder:
         self.predicted = []
         self.window = X_shape[0]
         self.entr_factor = entropy_params[f'{dataset}_{datatype}']['factor']
-        self.drift_detector = ECDD(0.2, w, c)
+        self.drift_detector = drift_detector
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
@@ -84,8 +85,7 @@ class LSTM_autoencoder:
                                self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
 
         # record value for drift detection
-        self.drift_detector.record(np.mean(self.history.history['loss']),
-                                   np.std(self.history.history['loss']))
+        self.drift_detector.record(self.history.history['loss'])
         self.curr_time = len(self.history.history['loss'].tolist())
 
     def get_pred_mean(self):
@@ -111,7 +111,7 @@ class LSTM_autoencoder:
         loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
 
         for error, t in zip(loss, timestamp):
-            self.drift_detector.update_ewma(error=error, t=self.curr_time)
+            self.drift_detector.update(error=error, t=self.curr_time)
             self.curr_time += 1
             response = self.drift_detector.monitor()
             if response == self.drift_detector.drift:
@@ -143,11 +143,15 @@ class LSTM_autoencoder:
                     tmp = pd.DataFrame(columns=['values'])
                     tmp['value'] = self.data_for_retrain
                     self.fit(tmp, 'retrain')
+
+                    self.drift_alerting_cts = 0
+                    self.drift_detector.reset()
+                    self.drift_detector.record(self.history.history['loss'].tolist())
+
                     end_time = time.time()
                     diff = end_time - start_time
                     print(f"Trained lstm for {diff}")
                     self.data_for_retrain = []
-                    self.drift_alerting_cts = 0
                 else:
                     self.data_for_retrain += funcy.lflatten(X.flatten())
                     print('?&', len(self.data_for_retrain))
