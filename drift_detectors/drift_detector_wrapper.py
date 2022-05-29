@@ -2,7 +2,7 @@
 class DriftDetectorWrapper:
 
     def __init__(self, detector):
-        self.detector = detector
+        self.detector = detector()
         self.nodrift = "No"
         self.alert = "Alert"
         self.drift = "Drift"
@@ -13,13 +13,13 @@ class DriftDetectorWrapper:
         Record error concept
         '''
         for e in error:
-            self.detector.add(e)
+            self.detector.add_element(e)
 
     def update(self, error, t):
         '''
         method to update ewma with error at time t
         '''
-        self.detector.add(error)
+        self.detector.add_element(error)
         self.sensor_drift = False
 
     def monitor(self):
