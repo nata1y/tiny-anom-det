@@ -86,7 +86,7 @@ class LSTM_autoencoder:
 
         # record value for drift detection
         self.drift_detector.record(self.history.history['loss'])
-        self.curr_time = len(self.history.history['loss'].tolist())
+        self.curr_time = len(self.history.history['loss'])
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -146,7 +146,7 @@ class LSTM_autoencoder:
 
                     self.drift_alerting_cts = 0
                     self.drift_detector.reset()
-                    self.drift_detector.record(self.history.history['loss'].tolist())
+                    self.drift_detector.record(self.history.history['loss'])
 
                     end_time = time.time()
                     diff = end_time - start_time

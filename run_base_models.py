@@ -292,4 +292,4 @@ if __name__ == '__main__':
                             fit_base_model(bo_result.x, for_optimization=False)
 
                         except Exception as e:
-                            pass
+                            raise e
