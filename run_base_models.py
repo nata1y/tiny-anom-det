@@ -18,6 +18,7 @@ import time
 import numpy as np
 from model_collection import *
 from settings import entropy_params, data_in_memory_sz
+from drift_detectors.drift_detector_wrapper import DriftDetectorWrapper
 
 
 root_path = os.getcwd()
@@ -32,7 +33,7 @@ class Stopper(EarlyStopper):
 
 
 def fit_base_model(model_params, for_optimization=True):
-    global can_model, traintime, predtime, batched_f1_score, batch_metrices, bwa, dataset
+    global can_model, traintime, predtime, batched_f1_score, batch_metrices, bwa, dataset, dd
 
     # 50% fit-test split
     if dataset == 'kpi':
@@ -52,7 +53,8 @@ def fit_base_model(model_params, for_optimization=True):
         data_in_memory = copy.deepcopy(data_train)
 
     start = time.time()
-    drift_detector = ECDD(0.2, w=0.25, l=0.25)
+    # ECDD(0.2, w=0.25, l=0.25)
+    drift_detector = dd
     # create models with hyper-parameters
     if name == 'sarima':
         model = SARIMA(dataset, type, filename, drift_detector, model_params[0], model_params[1])
@@ -183,7 +185,7 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         try:
-            stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_tuned.csv')
+            stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_{dname}.csv')
         except:
             stats_full = pd.DataFrame([])
 
@@ -194,7 +196,7 @@ def fit_base_model(model_params, for_optimization=True):
             'f1-e': met_total_e[2][-1],
             'f1-noe': met_total_noe[2][-1],
         }, ignore_index=True)
-        stats_full.to_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_tuned.csv', index=False)
+        stats_full.to_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_{dname}.csv', index=False)
     # return specificity if no anomalies, else return f1 score
     if data_test['is_anomaly'].tolist().count(1) == 0:
         return 1.0 - met_total_noe[0][-1]
@@ -210,86 +212,93 @@ if __name__ == '__main__':
        hp = pd.DataFrame([])
 
     continuer = True
-    for dataset, type in [('yahoo', 'synthetic')]:
-        # options:
-        # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
-        # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
+    for dname, dd in drift_detectors.items():
+        dd = DriftDetectorWrapper(dd)
+        for dataset, type in [('NAB', 'windows'), ('kpi', 'train'), ('yahoo', 'real'), ('yahoo', 'synthetic')]:
+            # options:
+            # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
+            # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
 
-        anomaly_window = step = entropy_params[f'{dataset}_{type}']['window']
+            anomaly_window = step = entropy_params[f'{dataset}_{type}']['window']
 
-        for name, (model, bo_space, def_params) in models.items():
-            train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
+            for name, (model, bo_space, def_params) in models.items():
+                train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
 
-            try:
-                stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_tuned.csv')
-            except:
-                stats_full = pd.DataFrame([])
+                try:
+                    stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_{dname}.csv')
+                except:
+                    stats_full = pd.DataFrame([])
 
-            try:
-                stats_batched = pd.read_csv(
-                    f'results/entropy_addition/{dataset}_{type}_stats_{name}_batched_test.csv')
-            except:
-                stats_batched = pd.DataFrame([])
+                try:
+                    stats_batched = pd.read_csv(
+                        f'results/entropy_addition/{dataset}_{type}_stats_{name}_batched_test.csv')
+                except:
+                    stats_batched = pd.DataFrame([])
 
-            for filename in os.listdir(train_data_path):
-                f = os.path.join(train_data_path, filename)
-                res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
-                data = pd.read_csv(f)
-                if os.path.isfile(f) and (stats_full.shape[0] == 0 or filename.replace('.csv', '')
-                                          not in stats_full['dataset'].tolist()):
+                for filename in os.listdir(train_data_path):
+                    f = os.path.join(train_data_path, filename)
+                    res_data_path = root_path + f'/results/imgs/{dataset}/{type}/{name}'
                     data = pd.read_csv(f)
-                    print('Working with current time series:', filename)
-                    data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
-                    data.drop_duplicates(subset=['timestamp'], keep=False, inplace=True)
+                    if os.path.isfile(f) and (stats_full.shape[0] == 0 or filename.replace('.csv', '')
+                                              not in stats_full['dataset'].tolist()):
+                        data = pd.read_csv(f)
+                        print('Working with current time series:', filename)
+                        data.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
+                        data.drop_duplicates(subset=['timestamp'], keep=False, inplace=True)
 
-                    if dataset == 'kpi':
-                        data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/test/', filename))
-                        data_test['timestamp'] = data_test['timestamp'].apply(
-                            lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
-                        data['timestamp'] = data['timestamp'].apply(
-                            lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
-                        data = data[-3000:]
-                        data_test_ = data_test[:25000]
+                        if dataset == 'kpi':
+                            data_test = pd.read_csv(os.path.join(root_path + '/datasets/' + dataset + '/test/', filename))
+                            data_test['timestamp'] = data_test['timestamp'].apply(
+                                lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
+                            data['timestamp'] = data['timestamp'].apply(
+                                lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
+                            data = data[-3000:]
+                            data_test_ = data_test[:25000]
 
-                    if dataset == 'NAB':
-                        try:
-                            bo_result = mock.Mock()
-                            bo_result.x = def_params
-                            # fit_base_model(bo_result.x, for_optimization=True)
-                            fit_base_model(bo_result.x, for_optimization=False)
-                            exit('DONE')
-                        except Exception as e:
-                            raise e
-                    else:
-                        try:
-                            # ################ Bayesian optimization ###################################################
-                            if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
-                                print(bo_space)
-                                try:
-                                    bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
-                                                            random_state=3, verbose=True, x0=def_params)
-                                except ValueError as e:
-                                    # error is rised when function yields constant value and does not converge
-                                    bo_result = mock.Mock()
+                        if True:
+                            try:
+                                bo_result = mock.Mock()
+                                if not hp.empty and not hp[(hp['filename'] == filename.replace('.csv', '')) &
+                                                           (hp['model'] == name)].empty:
+                                    bo_result.x = ast.literal_eval(
+                                        hp[(hp['filename'] == filename.replace('.csv', ''))
+                                           & (hp['model'] == name)]['hp'].tolist()[0])
+                                else:
                                     bo_result.x = def_params
 
-                                print(f"Found hyper parameters for {name}: {bo_result.x}")
+                                fit_base_model(bo_result.x, for_optimization=False)
+                            except Exception as e:
+                                raise e
+                        else:
+                            try:
+                                # ################ Bayesian optimization ###################################################
+                                if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
+                                    print(bo_space)
+                                    try:
+                                        bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
+                                                                random_state=3, verbose=True, x0=def_params)
+                                    except ValueError as e:
+                                        # error is rised when function yields constant value and does not converge
+                                        bo_result = mock.Mock()
+                                        bo_result.x = def_params
 
-                                if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
-                                    hp = hp.append({
-                                        'filename': filename.replace('.csv', ''),
-                                        'model': name,
-                                        'hp': bo_result.x
-                                    }, ignore_index=True)
+                                    print(f"Found hyper parameters for {name}: {bo_result.x}")
 
-                                    hp.to_csv('hyperparams.csv', index=False)
-                            else:
-                                bo_result = mock.Mock()
-                                bo_result.x = ast.literal_eval(
-                                    hp[(hp['filename'] == filename.replace('.csv', ''))
-                                       & (hp['model'] == name)]['hp'].tolist()[0])
+                                    if hp.empty or filename.replace('.csv', '') not in hp[hp['model'] == name]['filename'].tolist():
+                                        hp = hp.append({
+                                            'filename': filename.replace('.csv', ''),
+                                            'model': name,
+                                            'hp': bo_result.x
+                                        }, ignore_index=True)
 
-                            fit_base_model(bo_result.x, for_optimization=False)
+                                        hp.to_csv('hyperparams.csv', index=False)
+                                else:
+                                    bo_result = mock.Mock()
+                                    bo_result.x = ast.literal_eval(
+                                        hp[(hp['filename'] == filename.replace('.csv', ''))
+                                           & (hp['model'] == name)]['hp'].tolist()[0])
 
-                        except Exception as e:
-                            raise e
+                                fit_base_model(bo_result.x, for_optimization=False)
+
+                            except Exception as e:
+                                raise e
