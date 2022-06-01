@@ -23,7 +23,7 @@ class ECDD:
 
     def record(self, data):
         '''
-        Record error concept
+        Record error concept for a single error measure
         '''
         MI0 = np.mean(data)
         SIGMA0 = np.std(data)
@@ -32,7 +32,7 @@ class ECDD:
 
     def record_emwa(self, MI0, SIGMA0):
         '''
-        Record error concept
+        Record error concept for a swarm of particles
         '''
         self.mean_zero = MI0
         self.deviation_zero = SIGMA0

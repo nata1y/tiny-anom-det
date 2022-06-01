@@ -21,6 +21,7 @@ class B:
         self.deviation_zero = 0
         self.counter = 0
         self.ecdd = ECDD(0.2, w, c)
+        self.drift_detector
 
     def record(self, data, lags, swarm):
         behavior = self.update_behavior(data, lags, swarm)
