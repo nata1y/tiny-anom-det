@@ -64,7 +64,8 @@ def fit_base_model(model_params, for_optimization=True):
     elif name == 'pso-elm':
         # take pso-elm fit size as variable
         n = min(model_params[0], data_train.shape[0])
-        model = PSO_ELM_anomaly(dataset, type, filename,  n=n,
+        model = PSO_ELM_anomaly(dataset, type, filename,  drift_detector,
+                                n=n,
                                 magnitude=model_params[1],
                                 entropy_window=anomaly_window,
                                 error_threshold=model_params[2])
@@ -90,7 +91,7 @@ def fit_base_model(model_params, for_optimization=True):
                                  threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
                                  detect_mode=DetectMode.anomaly_only, dataset=dataset,
-                                 datatype=type, filename=filename)
+                                 datatype=type, filename=filename, drift_detector=drift_detector)
         model.fit()
         end_time = time.time()
 
@@ -98,8 +99,6 @@ def fit_base_model(model_params, for_optimization=True):
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'pso-elm':
         start_time = time.time()
-        model = PSO_ELM_anomaly(n=model_params[0], magnitude=model_params[1], error_threshold=model_params[2],
-                                dataset=dataset, datatype=type, filename=filename)
         model.fit(data_train[-model.n:])
         end_time = time.time()
 
@@ -185,7 +184,7 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         try:
-            stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_{dname}.csv')
+            stats_full = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift_{dname}.csv')
         except:
             stats_full = pd.DataFrame([])
 
@@ -196,7 +195,8 @@ def fit_base_model(model_params, for_optimization=True):
             'f1-e': met_total_e[2][-1],
             'f1-noe': met_total_noe[2][-1],
         }, ignore_index=True)
-        stats_full.to_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_{dname}.csv', index=False)
+        stats_full.to_csv(f'results/{dataset}_{type}_stats_{name}_drift_{dname}.csv', index=False)
+        stats_full.to_excel(f'results/{dataset}_{type}_stats_{name}_drift_{dname}.xlsx', index=False)
     # return specificity if no anomalies, else return f1 score
     if data_test['is_anomaly'].tolist().count(1) == 0:
         return 1.0 - met_total_noe[0][-1]
@@ -214,7 +214,7 @@ if __name__ == '__main__':
     continuer = True
     for dname, dd in drift_detectors.items():
         dd = DriftDetectorWrapper(dd)
-        for dataset, type in [('NAB', 'windows'), ('kpi', 'train'), ('yahoo', 'real'), ('yahoo', 'synthetic')]:
+        for dataset, type in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')]:
             # options:
             # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
             # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
@@ -225,7 +225,7 @@ if __name__ == '__main__':
                 train_data_path = root_path + '/datasets/' + dataset + '/' + type + '/'
 
                 try:
-                    stats_full = pd.read_csv(f'results/entropy_addition/{dataset}_{type}_stats_{name}_drift_{dname}.csv')
+                    stats_full = pd.read_csv(f'results/{dataset}_{type}_stats_{name}_drift_{dname}.csv')
                 except:
                     stats_full = pd.DataFrame([])
 

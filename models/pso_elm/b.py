@@ -13,24 +13,23 @@ import numpy as np
 
 
 class B:
-    def __init__(self, limit, w, c):
+    def __init__(self, limit, w, c, drift_detector):
         self.limit = limit
         self.w = w
         self.c = c        
         self.mean_zero = 0
         self.deviation_zero = 0
         self.counter = 0
-        self.ecdd = ECDD(0.2, w, c)
-        self.drift_detector
+        self.drift_detector = drift_detector
 
     def record(self, data, lags, swarm):
         behavior = self.update_behavior(data, lags, swarm)
         self.mean_zero = behavior[0]
         self.deviation_zero = behavior[1]
-        self.ecdd.record_emwa(self.mean_zero, self.deviation_zero)
+        self.drift_detector.record_emwa(self.mean_zero, self.deviation_zero)
 
     def update_ewma(self, MI0, i):
-        self.ecdd.update(MI0, i)
+        self.drift_detector.update(MI0, i)
 
     def monitor(self, data, real, swarm, i):
         '''
@@ -38,11 +37,11 @@ class B:
         '''
         current_behavior = self.compute_current_behavior(data, real, swarm)
         self.update_ewma(current_behavior[0], i)
-        string_ecdd = self.ecdd.monitor()
+        string_ecdd = self.drift_detector.monitor()
 
-        if string_ecdd == self.ecdd.drift:
+        if string_ecdd == self.drift_detector.drift:
             self.counter = self.counter + 1
-        elif (string_ecdd == self.ecdd.alert) or (string_ecdd == self.ecdd.nodrift):
+        elif (string_ecdd == self.drift_detector.alert) or (string_ecdd == self.drift_detector.nodrift):
             self.counter = 0
 
         if self.counter == self.limit:

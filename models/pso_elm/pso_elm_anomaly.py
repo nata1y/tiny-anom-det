@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 from models.pso_elm.utils.moving_window import MowingWindow
 from models.pso_elm.regressors.idpso_elm import IDPSO_ELM
 import matplotlib.pyplot as plt
-from drift_detectors.b import B
+from models.pso_elm.b import B
 import time
 import pandas as pd
 import numpy as np
@@ -33,7 +33,7 @@ from settings import inercia_inicial, c1, c2, crit, inercia_final, xmax, split_d
 
 
 class PSO_ELM_anomaly:
-    def __init__(self, dataset, datatype, filename,
+    def __init__(self, dataset, datatype, filename, drift_detector,
                  n=500, lags=5, qtd_neurons=10, num_particles=10, limit=10, w=0.25, c=0.25,
                  magnitude=5, entropy_window=100, error_threshold=0.1):
         '''
@@ -73,6 +73,7 @@ class PSO_ELM_anomaly:
         self.dataset = dataset
         self.filename = filename.replace(".csv", "")
         self.use_drift_adaptation = True
+        self.drift_detector = drift_detector
 
     def fit(self, data_train):
         data_train = data_train['value'].to_numpy()
@@ -94,7 +95,7 @@ class PSO_ELM_anomaly:
         self.window_params = MowingWindow()
         self.window_params.adjust(data_train)
 
-        self.b = B(self.limit, self.w, self.c)
+        self.b = B(self.limit, self.w, self.c, self.drift_detector)
         self.b.record(self.window_params.data, self.lags, self.swarm)
         end_time = time.time()
 
@@ -190,7 +191,7 @@ class PSO_ELM_anomaly:
                         self.window_prediction.adjust(self.swarm.dataset[0][(len(self.swarm.dataset[0]) - 1):])
                         self.prediction = self.swarm.predict(self.window_prediction.data)
 
-                        self.b = B(self.limit, self.w, self.c)
+                        self.b = B(self.limit, self.w, self.c, self.drift_detector)
                         self.b.record(self.window_params.data, self.lags, self.swarm)
 
                         self.drift_detected = False

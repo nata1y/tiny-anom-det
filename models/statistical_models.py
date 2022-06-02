@@ -42,7 +42,7 @@ class SARIMA:
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
-        self.use_drift_adaptation = True
+        self.use_drift_adaptation = False
         self.curr_time = 0
         self.edge_cases = ['occupancy', 'speed', 'TravelTime']
 

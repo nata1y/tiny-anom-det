@@ -15,6 +15,12 @@ class DriftDetectorWrapper:
         for e in error:
             self.detector.add_element(e)
 
+    def record_emwa(self, error, deviation):
+        '''
+        Record error concept but should be compatible with ecdd
+        '''
+        self.detector.add_element(error)
+
     def update(self, error, t):
         '''
         method to update ewma with error at time t
