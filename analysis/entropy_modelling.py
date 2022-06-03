@@ -38,22 +38,19 @@ def plot_optimal_window_heatmap(dataset):
 
 def plot_entropy_per_ts(entropy_name, batches_anomalies,
                         entropies, boundary_bottom,
-                        boundary_up, collected_entropies):
+                        boundary_up, ts):
     color = ['red' if i in batches_anomalies else 'blue' for i in range(len(entropies))]
 
     plt.bar(list(range(len(entropies))), entropies, color=color)
-    plt.fill_between(list(range(len(collected_entropies), len(entropies))),
-                     boundary_bottom,
-                     boundary_up,
-                     color='b', alpha=.5)
     plt.axvline(x=int(len(entropies) // 2), color='orange',
-                linestyle='--', label='fit-test separation')
-    plt.axhline(y=boundary_bottom, color='y', linestyle='--')
-    plt.axhline(y=boundary_up, color='y', linestyle='--')
+                linestyle='--', label='train-test split')
+    plt.axhline(y=boundary_bottom, color='grey', linestyle='--')
+    plt.axhline(y=boundary_up, color='grey', linestyle='--')
 
     plt.legend()
     plt.ylabel(entropy_name)
     plt.xlabel('Batch')
+    plt.savefig(f'results/ts_properties/imgs/entropy_analysis/{ts}_entropy_{entropy_name}.png')
     plt.clf()
 
 
@@ -61,7 +58,7 @@ def entropy_modelling():
     entropies_no_anomalies = []
 
     # loop through datasets
-    for dataset, subsets in [('NAB', ['windows']), ('yahoo', ['real', 'synthetic', 'A3Benchmark', 'A4Benchmark'])]:
+    for dataset, subsets in [('kpi', ['train'])]:
         for tss in subsets:
             hcs = pd.DataFrame([])
             train_data_path = 'datasets/' + dataset + '/' + tss + '/'
@@ -185,7 +182,7 @@ def entropy_modelling():
                                 if plot:
                                     plot_entropy_per_ts(entropy_name, batches_anomalies,
                                                         entropies, boundary_bottom,
-                                                        boundary_up, collected_entropies)
+                                                        boundary_up, filename.replace('.csv',  ''))
 
                                 res = res.append({
                                     'ts': filename.replace('.csv', ''),
@@ -195,6 +192,6 @@ def entropy_modelling():
                                     'subset': ts,
                                     'f1': f1_score(y_true, y_predicted, average='binary')
                                 }, ignore_index=True)
-                                res.to_csv(f'results/ts_properties/entropies/entropy_vs_window_{dataset}_{subsets}_per_ts.csv')
+                                res.to_csv(f'results/ts_properties/entropies/entropy_vs_window_{dataset}_{tss}_per_ts.csv')
                             except Exception as e:
                                 pass
