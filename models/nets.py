@@ -53,7 +53,7 @@ class LSTM_autoencoder:
         self.drift_count_limit = drift_count_limit
         self.data_for_retrain = []
         self.dynamic_thresholds = []
-        self.use_drift_adaptation = True
+        self.use_drift_adaptation = False
         self.curr_time = 0
 
     def fit(self, data_train, phase='fit'):

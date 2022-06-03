@@ -8,7 +8,7 @@ import numpy as np
 
 
 class ECDD:
-    def __init__(self, Lambda, w, l):
+    def __init__(self, Lambda=0.2, w=0.25, l=0.25):
         self.lmbd = Lambda
         self.w = w
         self.l = l
