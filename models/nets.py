@@ -44,7 +44,7 @@ class LSTM_autoencoder:
         self.dataset = dataset
         self.filename = filename.replace(".csv", "")
         self.loss = []
-        self.predicted = []
+        self.predicted = {'static': [], 'dynamic': []}
         self.window = X_shape[0]
         self.entr_factor = entropy_params[f'{dataset}_{datatype}']['factor']
         self.drift_detector = drift_detector
@@ -70,7 +70,7 @@ class LSTM_autoencoder:
                                                         scale=st.sem(self.history.history['loss']))[1]
 
         self.svd_entropies = []
-
+        print(self.threshold, 'THRESHOLD')
         # record entropy if in initial phase
         if phase != 'retrain':
             for start in range(0, len(data_train), self.window):
@@ -132,7 +132,8 @@ class LSTM_autoencoder:
             self.dynamic_thresholds += [threshold_adapted] * len(y_pred2)
 
         self.loss += loss.flatten().tolist()
-        self.predicted += y_pred1
+        self.predicted['static'] += y_pred1
+        self.predicted['dynamic'] += y_pred2
 
         # perform drift adaptation
         if self.use_drift_adaptation:
@@ -181,10 +182,12 @@ class LSTM_autoencoder:
         datatest.reset_index(inplace=True)
         for tm, row in loss_df.iterrows():
             if tm in datatest.index:
-                if self.predicted[tm] == 1 and datatest.loc[tm, 'is_anomaly'] == 0:
+                if self.predicted[threshold_type][tm] == 1 and \
+                        datatest.loc[tm, 'is_anomaly'] == 0:
                     x_fp.append(tm)
                     y_fp.append(row['value'])
-                if self.predicted[tm] == 0 and datatest.loc[tm, 'is_anomaly'] == 1:
+                if self.predicted[threshold_type][tm] == 0 and \
+                        datatest.loc[tm, 'is_anomaly'] == 1:
                     x_fn.append(tm)
                     y_fn.append(row['value'])
 
