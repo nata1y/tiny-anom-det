@@ -19,6 +19,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 '''
+import operator
+
 from models.pso_elm.utils.moving_window import MowingWindow
 from models.pso_elm.regressors.idpso_elm import IDPSO_ELM
 import matplotlib.pyplot as plt
@@ -27,6 +29,7 @@ import time
 import pandas as pd
 import numpy as np
 import antropy as ant
+import scipy.stats as st
 from scipy import stats
 from sklearn.metrics import mean_absolute_error
 from settings import inercia_inicial, c1, c2, crit, inercia_final, xmax, split_dataset, it
@@ -116,6 +119,15 @@ class PSO_ELM_anomaly:
             except:
                 pass
 
+        prediction_train = []
+        for d in data_train:
+            self.window_prediction.add_window(d)
+            prediction_train.append(self.swarm.predict(self.window_train_loss.data)[0])
+
+        loss = np.abs(np.subtract(prediction_train, data_train.tolist()))
+        self.error_threshold = self.error_threshold * st.t.interval(alpha=0.99, df=len(loss)-1,
+                                                                    loc=np.mean(loss),
+                                                                    scale=st.sem(loss))[1]
         factor = self.magnitude
         self.boundary_bottom = np.mean([v for v in self.svd_entropies if pd.notna(v)]) - \
                           factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
