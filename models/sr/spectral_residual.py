@@ -114,10 +114,10 @@ class SpectralResidual:
                 'value': self.__series__['value'].tolist()[self.__series__.shape[0] - m + 1] + ghat * m},
                 ignore_index=True)
 
-    def predict(self, window_step):
+    def predict(self, window_step, current_points):
         self.__anomaly_frame = self.__detect()
         try:
-            entropy = ant.svd_entropy(window_step['value'].tolist()[-self.entropy_window:], normalize=True)
+            entropy = ant.svd_entropy(window_step['value'].tolist()[-current_points], normalize=True)
         except:
             entropy = (self.boundary_bottom + self.boundary_up) / 2
 
@@ -140,14 +140,14 @@ class SpectralResidual:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
             extent = 1.5 - max(extent, 1.0 - extent)
             threshold_adapted = self.__threshold__ * extent
-            self.dynamic_thresholds += [threshold_adapted] * self.entropy_window
+            self.dynamic_thresholds += [threshold_adapted] * current_points
             result['isAnomaly_e'] = np.where(result['score'] > threshold_adapted, True, False)
         else:
-            self.dynamic_thresholds += [self.__threshold__] * self.entropy_window
+            self.dynamic_thresholds += [self.__threshold__] * current_points
             result['isAnomaly_e'] = result['isAnomaly']
 
-        self.history = self.history.append(result[-self.entropy_window:], ignore_index=True)
-        return result[-self.entropy_window:]
+        self.history = self.history.append(result[-current_points:], ignore_index=True)
+        return result[-current_points:]
 
     def plot(self, datatest, threshold_type='dynamic'):
         fig = go.Figure()
@@ -170,7 +170,6 @@ class SpectralResidual:
 
         x_fp, y_fp = [], []
         x_fn, y_fn = [], []
-        datatest = datatest[~datatest.index.duplicated(keep='first')]
         for idx, (tm, row) in enumerate(self.history.iterrows()):
             threshold = self.__threshold__ if threshold_type != 'dynamic' else self.dynamic_thresholds[idx]
             if tm in datatest.index:

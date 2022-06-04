@@ -129,12 +129,11 @@ def fit_base_model(model_params, for_optimization=True):
                 elif name == 'sr':
                     model.__series__ = data_in_memory
                     try:
-                        res = model.predict(data_in_memory)
+                        res = model.predict(data_in_memory, window.shape[0])
                         y_pred_noe = [1 if x else 0 for x in res['isAnomaly'].tolist()]
 
                         y_pred_e = [1 if x else 0 for x in res['isAnomaly_e'].tolist()]
                     except Exception as e:
-                        raise e
                         y_pred_noe = [0 for _ in range(window.shape[0])]
                         y_pred_e = [0 for _ in range(window.shape[0])]
 
@@ -157,9 +156,9 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         print('Plotting..........')
-        if dataset == 'NAB':
-            plot_general(model, dataset, type, name, data_test,
-                         y_pred_total_e, filename)
+        plot_general(model, dataset, type, name, data_test,
+                     y_pred_total_e, filename)
+        quit()
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -214,7 +213,8 @@ if __name__ == '__main__':
     continuer = True
     for dname, dd in drift_detectors.items():
         dd = DriftDetectorWrapper(dd)
-        for dataset, type in [('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')]:
+        dname = 'no_da'
+        for dataset, type in [('yahoo', 'real')]:
             # options:
             # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
             # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
@@ -272,7 +272,7 @@ if __name__ == '__main__':
                         else:
                             try:
                                 # ################ Bayesian optimization ###################################################
-                                if hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
+                                if True or hp.empty or hp[(hp['filename'] == filename.replace('.csv', '')) & (hp['model'] == name)].empty:
                                     print(bo_space)
                                     try:
                                         bo_result = gp_minimize(fit_base_model, bo_space, callback=Stopper(), n_calls=11,
