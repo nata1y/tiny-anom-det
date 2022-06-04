@@ -65,12 +65,11 @@ class LSTM_autoencoder:
                     callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, mode='min')],
                                       validation_split=0.1,  shuffle=False)
 
-        self.threshold = self.magnitude * st.t.interval(alpha=0.99, df=len(self.history.history['loss'])-1,
-                                                        loc=np.mean(self.history.history['loss']),
-                                                        scale=st.sem(self.history.history['loss']))[1]
-
+        loss = np.abs(X_train - self.model.predict(X_train)).ravel()[:X_train.shape[1]]
+        self.threshold = self.magnitude * st.t.interval(alpha=0.99, df=len(loss)-1,
+                                                        loc=np.mean(loss),
+                                                        scale=st.sem(loss))[1]
         self.svd_entropies = []
-        print(self.threshold, 'THRESHOLD')
         # record entropy if in initial phase
         if phase != 'retrain':
             for start in range(0, len(data_train), self.window):
@@ -85,8 +84,8 @@ class LSTM_autoencoder:
                                self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
 
         # record value for drift detection
-        self.drift_detector.record(self.history.history['loss'])
-        self.curr_time = len(self.history.history['loss'])
+        self.drift_detector.record(loss)
+        self.curr_time = len(loss)
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
