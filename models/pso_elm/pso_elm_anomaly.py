@@ -36,7 +36,7 @@ from settings import inercia_inicial, c1, c2, crit, inercia_final, xmax, split_d
 
 
 class PSO_ELM_anomaly:
-    def __init__(self, dataset, datatype, filename, drift_detector,
+    def __init__(self, dataset, datatype, filename, drift_detector, use_drift,
                  n=500, lags=5, qtd_neurons=10, num_particles=10, limit=10, w=0.25, c=0.25,
                  magnitude=5, entropy_window=100, error_threshold=0.1):
         '''
@@ -75,7 +75,7 @@ class PSO_ELM_anomaly:
         self.datatype = datatype
         self.dataset = dataset
         self.filename = filename.replace(".csv", "")
-        self.use_drift_adaptation = True
+        self.use_drift_adaptation = use_drift
         self.drift_detector = drift_detector
 
     def fit(self, data_train):

@@ -20,7 +20,8 @@ from utils import adjust_range
 
 class SARIMA:
 
-    def __init__(self, dataset, datatype, filename, drift_detector, conf_top=1.5, conf_bottom=1.5,
+    def __init__(self, dataset, datatype, filename, drift_detector, use_drift,
+                 conf_top=1.5, conf_bottom=1.5,
                  train_size=3000, drift_count_limit=10):
         self.full_pred = []
         self.mean_fluctuation = []
@@ -42,7 +43,7 @@ class SARIMA:
         self.is_drift = False
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
-        self.use_drift_adaptation = False
+        self.use_drift_adaptation = use_drift
         self.curr_time = 0
         self.edge_cases = ['occupancy', 'speed', 'TravelTime']
 

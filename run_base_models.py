@@ -57,14 +57,14 @@ def fit_base_model(model_params, for_optimization=True):
     drift_detector = dd
     # create models with hyper-parameters
     if name == 'sarima':
-        model = SARIMA(dataset, type, filename, drift_detector, model_params[0], model_params[1])
+        model = SARIMA(dataset, type, filename, drift_detector, use_drift_adapt, model_params[0], model_params[1])
     elif name == 'lstm':
-        model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename, drift_detector,
+        model = LSTM_autoencoder([anomaly_window, 1], dataset, type, filename, drift_detector, use_drift_adapt,
                                  magnitude=model_params[0])
     elif name == 'pso-elm':
         # take pso-elm fit size as variable
         n = min(model_params[0], data_train.shape[0])
-        model = PSO_ELM_anomaly(dataset, type, filename,  drift_detector,
+        model = PSO_ELM_anomaly(dataset, type, filename,  drift_detector, use_drift_adapt,
                                 n=n,
                                 magnitude=model_params[1],
                                 entropy_window=anomaly_window,
@@ -87,7 +87,7 @@ def fit_base_model(model_params, for_optimization=True):
         print(f"Trained model {name} on {filename} for {diff}")
     elif name == 'sr':
         start_time = time.time()
-        model = SpectralResidual(series=data_train[['value', 'timestamp']],
+        model = SpectralResidual(series=data_train[['value', 'timestamp']], use_drift=use_drift_adapt,
                                  threshold=model_params[0], mag_window=model_params[1],
                                  score_window=model_params[2], sensitivity=model_params[3],
                                  detect_mode=DetectMode.anomaly_only, dataset=dataset,
@@ -158,7 +158,6 @@ def fit_base_model(model_params, for_optimization=True):
         print('Plotting..........')
         plot_general(model, dataset, type, name, data_test,
                      y_pred_total_e, filename)
-        quit()
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -211,10 +210,12 @@ if __name__ == '__main__':
        hp = pd.DataFrame([])
 
     continuer = True
-    for dname, dd in drift_detectors.items():
-        dd = DriftDetectorWrapper(dd)
-        dname = 'no_da'
-        for dataset, type in [('yahoo', 'real')]:
+    for dname, (dd, use_drift_adapt) in drift_detectors.items():
+        if dname == 'ECDD':
+            dd = dd()
+        else:
+            dd = DriftDetectorWrapper(dd)
+        for dataset, type in [('NAB', 'windows'), ('yahoo', 'real')]:
             # options:
             # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
             # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')

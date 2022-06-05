@@ -26,7 +26,7 @@ class LSTM_autoencoder:
     model = None
     loss = []
 
-    def __init__(self, X_shape, dataset, datatype, filename, drift_detector,
+    def __init__(self, X_shape, dataset, datatype, filename, drift_detector, use_drift,
                  magnitude=1.5, drift_count_limit=10):
 
         self.model = Sequential()
@@ -53,7 +53,7 @@ class LSTM_autoencoder:
         self.drift_count_limit = drift_count_limit
         self.data_for_retrain = []
         self.dynamic_thresholds = []
-        self.use_drift_adaptation = False
+        self.use_drift_adaptation = use_drift
         self.curr_time = 0
 
     def fit(self, data_train, phase='fit'):

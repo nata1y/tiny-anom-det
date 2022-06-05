@@ -38,7 +38,7 @@ from settings import anomaly_window, entropy_params, data_in_memory_sz
 
 
 class SpectralResidual:
-    def __init__(self, series, threshold, mag_window, score_window,
+    def __init__(self, series, use_drift, threshold, mag_window, score_window,
                  sensitivity, detect_mode, dataset,
                  datatype, filename, drift_detector, batch_size=32, drift_count_limit=10):
         self.__series__ = series
@@ -67,7 +67,7 @@ class SpectralResidual:
         self.drift_alerting_cts = 0
         self.drift_count_limit = drift_count_limit
         self.dynamic_thresholds = []
-        self.use_drift_adaptation = False
+        self.use_drift_adaptation = use_drift
 
     def fit(self):
         self.svd_entropies = []
