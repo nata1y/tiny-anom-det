@@ -124,7 +124,7 @@ class LSTM_autoencoder:
             self.dynamic_thresholds += [self.threshold] * len(y_pred2)
         else:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
-            extent = 1.0 - max(extent, 1.0 - extent)
+            extent = 1.5 - max(extent, 1.0 - extent)
             threshold_adapted = self.threshold * extent
             y_pred2 = [0 if loss[idx] <= threshold_adapted else 1 for idx in range(len(loss))]
             self.dynamic_thresholds += [threshold_adapted] * len(y_pred2)
