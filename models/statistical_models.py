@@ -59,7 +59,7 @@ class SARIMA:
 
     def _get_time_index(self, data):
         '''
-        SARIMAX works with timestamp, some datasets do not have timestamp but rather integer ids
+        SARIMA works with timestamp, some datasets do not have timestamp but rather integer ids
         OR they have uneven distribution of timestamps with screwed frequency
         This method is used for preprocessing data.
 
@@ -133,8 +133,9 @@ class SARIMA:
 
         self.model = self.model.fit()
         loss = [abs(x - y) for x, y in zip(data['value'].tolist(), self.model.get_prediction().predicted_mean)]
-        self.drift_detector.record(loss)
-        self.curr_time += len(loss)
+        if self.use_drift_adaptation:
+            self.drift_detector.record(loss)
+            self.curr_time += len(loss)
 
     def form_entropy(self, data):
         collected_entropies = []
@@ -225,12 +226,13 @@ class SARIMA:
 
         for idx, row in pred_ci.iterrows():
             if str(newdf.loc[idx, 'value']).lower() not in ['nan', 'none', '']:
-                error = abs(newdf.loc[idx, 'value'] - pred.predicted_mean.loc[idx])
-                self.drift_detector.update(error=error, t=self.curr_time)
-                self.curr_time += 1
-                response = self.drift_detector.monitor()
-                if response == self.drift_detector.drift:
-                    self.drift_alerting_cts += 1
+                if self.use_drift_adaptation:
+                    error = abs(newdf.loc[idx, 'value'] - pred.predicted_mean.loc[idx])
+                    self.drift_detector.update(error=error, t=self.curr_time)
+                    self.curr_time += 1
+                    response = self.drift_detector.monitor()
+                    if response == self.drift_detector.drift:
+                        self.drift_alerting_cts += 1
 
                 if adjust_range(row['lower value'], 'div', self.conf_bottom) <= newdf.loc[idx, 'value'] \
                         <= adjust_range(row['upper value'], 'mult', self.conf_top):

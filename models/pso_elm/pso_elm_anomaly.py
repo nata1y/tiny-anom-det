@@ -18,9 +18,15 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
+
+Modified in spring-summer 2022
+By Natalia Karpova
 '''
 import operator
 
+from skmultiflow.drift_detection import ADWIN
+
+from drift_detectors.drift_detector_wrapper import DriftDetectorWrapper
 from models.pso_elm.utils.moving_window import MowingWindow
 from models.pso_elm.regressors.idpso_elm import IDPSO_ELM
 import matplotlib.pyplot as plt
@@ -98,7 +104,11 @@ class PSO_ELM_anomaly:
         self.window_params = MowingWindow()
         self.window_params.adjust(data_train)
 
-        self.b = B(self.limit, self.w, self.c, self.drift_detector)
+        if self.use_drift_adaptation:
+            self.b = B(self.limit, self.w, self.c, self.drift_detector)
+        else:
+            # create dummy detector but not use drift adaptation later on
+            self.b = B(self.limit, self.w, self.c, DriftDetectorWrapper(ADWIN))
         self.b.record(self.window_params.data, self.lags, self.swarm)
         end_time = time.time()
 
@@ -212,6 +222,10 @@ class PSO_ELM_anomaly:
 
     def plot(self, datatest, threshold_type='dynamic'):
         stream, labels = datatest['value'].tolist(), datatest['is_anomaly'].tolist()
+        stream, labels = stream, labels
+        self.predictions_df['predictions'] = self.predictions_df['predictions']
+        self.loss_thresholds[threshold_type] = self.loss_thresholds[threshold_type]
+
         MAE = self.error_stream / len(stream)
         wd = 2
 

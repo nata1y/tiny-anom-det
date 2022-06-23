@@ -29,7 +29,6 @@ import pandas as pd
 import antropy as ant
 from scipy import stats
 
-from drift_detectors.ecdd import ECDD
 from models.sr.msanomalydetector.util import *
 import models.sr.msanomalydetector.boundary_utils as boundary_helper
 import plotly.graph_objects as go
@@ -92,7 +91,8 @@ class SpectralResidual:
         print(self.boundary_up, self.boundary_bottom)
 
         result = self.__anomaly_frame
-        self.drift_detector.record(result['score'])
+        if self.use_drift_adaptation:
+            self.drift_detector.record(result['score'])
         return result
 
     def _g(self, x1, y1, x2, y2):

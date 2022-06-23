@@ -40,7 +40,7 @@ Library includes the set of methods for feature analysis, and drift detector wra
 
 ### PSO-ELM
 PSO-ELM model is created by by Gustavo Oliveira (Universidade Federal de Pernambuco, Recife, Brasil)
-Current anomaly detector is a tweak on PSO-ELM-B model
+Current anomaly detector is a tweak on PSO-ELM-B model00
 https://ieeexplore.ieee.org/document/8371949
 https://github.com/GustavoHFMO/IDPSO-ELM-S
 

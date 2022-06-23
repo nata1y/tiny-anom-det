@@ -1,5 +1,6 @@
 '''
-Finds optimal entropy factor + window per datasets by brute-force grid search
+Dummy entropy model used to assess per-batch entropy behavior over ts
+optimal entropy factor + window per datasets by brute-force grid search
 '''
 
 import copy
@@ -44,13 +45,13 @@ def plot_entropy_per_ts(entropy_name, batches_anomalies,
     plt.bar(list(range(len(entropies))), entropies, color=color)
     plt.axvline(x=int(len(entropies) // 2), color='orange',
                 linestyle='--', label='train-test split')
-    plt.axhline(y=boundary_bottom, color='grey', linestyle='--')
-    plt.axhline(y=boundary_up, color='grey', linestyle='--')
+    plt.axhline(y=boundary_bottom, color='orange', linestyle='--')
+    plt.axhline(y=boundary_up, color='orange', linestyle='--')
 
     plt.legend()
     plt.ylabel(entropy_name)
     plt.xlabel('Batch')
-    plt.savefig(f'results/ts_properties/imgs/entropy_analysis/{ts}_entropy_{entropy_name}.png')
+    plt.savefig(f'results/ts_properties/imgs/{ts}_entropy_{entropy_name}_ex.png')
     plt.clf()
 
 
@@ -68,11 +69,16 @@ def entropy_modelling():
                 print(filename)
                 f = os.path.join(train_data_path, filename)
                 # loop through windows 5 to 100
-                for wdw in range(100, 5, -5):
+                # for wdw in range(100, 5, -5):
+                for wdw in [65]:
+                    if '05f10' not in filename:
+                        continue
                     # loop through entropy variants
-                    for entropy_name in ['spectral_entropy', 'value_decomposition_entropy', 'approximate_entropy',
-                                         'sample_entropy', 'permutation_entropy', 'renyi', 'tsallis']:
-                        for factor in np.arange(0.5, 4.1, 0.1):
+                    # for entropy_name in ['spectral_entropy', 'value_decomposition_entropy', 'approximate_entropy',
+                    #                      'sample_entropy', 'permutation_entropy', 'renyi', 'tsallis']:
+                    for entropy_name in ['value_decomposition_entropy']:
+                        # for factor in np.arange(0.5, 4.1, 0.1):
+                        for factor in [1.5]:
                             factor = round(factor, 1)
                             print(f'Doing entropy {wdw}, {factor}')
                             ts = pd.read_csv(f)
@@ -82,12 +88,9 @@ def entropy_modelling():
                                 ts2 = pd.read_csv('datasets/' + dataset + '/test/' + filename)
                             ts.rename(columns={'timestamps': 'timestamp', 'anomaly': 'is_anomaly'}, inplace=True)
 
-                            max_qs, max_cs = [], []
                             batches_anomalies = []
-                            entropies = []
                             entropy_differences = []
                             collected_entropies = []
-                            mean_entropy, std_entropy, boundary_up, boundary_bottom = None, None, None, None
                             y_predicted = []
                             y_true = []
 
@@ -134,11 +137,12 @@ def entropy_modelling():
                                             entropies_no_anomalies.append(collected_entropies[-1])
 
                                 entropies = copy.deepcopy(collected_entropies)
+                                batches_anomalies = []
+                                entropies = []
                                 mean_entropy = np.mean(np.array([v for v in collected_entropies if pd.notna(v)]))
                                 std_entropy = np.std(np.array([v for v in collected_entropies if pd.notna(v)]))
                                 boundary_bottom = mean_entropy - factor * std_entropy
                                 boundary_up = mean_entropy + factor * std_entropy
-
                                 for start in range(0, ts2.shape[0], step):
                                     window = ts2.iloc[start:start + step]
                                     if window.shape[0] == step:
@@ -164,7 +168,8 @@ def entropy_modelling():
                                                 ordpy.renyi_entropy(window['value'].to_numpy()))
 
                                         if window['is_anomaly'].tolist().count(1) > 0:
-                                            batches_anomalies.append(len(collected_entropies) + (start // step))
+                                            # batches_anomalies.append(len(collected_entropies) + (start // step))
+                                            batches_anomalies.append(start // step)
 
                                         if mean_entropy:
 

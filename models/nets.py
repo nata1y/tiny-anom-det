@@ -14,8 +14,6 @@ from tensorflow.keras.layers import Dense, LSTM, Dropout, RepeatVector, TimeDist
 from tensorflow.keras.models import Sequential
 import antropy as ant
 
-from drift_detectors.drift_detector_wrapper import DriftDetectorWrapper
-from drift_detectors.ecdd import ECDD
 from settings import entropy_params
 from utils import create_dataset
 
@@ -57,7 +55,6 @@ class LSTM_autoencoder:
         self.curr_time = 0
 
     def fit(self, data_train, phase='fit'):
-        data_train = data_train[-3000:]
         X_train, y_train = create_dataset(data_train[['value']], data_train[['value']], self.window)
         data_train = data_train['value'].tolist()
 
@@ -84,8 +81,9 @@ class LSTM_autoencoder:
                                self.entr_factor * np.std([v for v in self.svd_entropies if pd.notna(v)])
 
         # record value for drift detection
-        self.drift_detector.record(loss)
-        self.curr_time = len(loss)
+        if self.use_drift_adaptation:
+            self.drift_detector.record(loss)
+            self.curr_time = len(loss)
 
     def get_pred_mean(self):
         pred_thr = pd.DataFrame([])
@@ -109,12 +107,13 @@ class LSTM_autoencoder:
         prediction = self.model.predict(Xf)
         loss = np.abs(Xf - prediction).ravel()[:X.shape[1]]
 
-        for error, t in zip(loss, timestamp):
-            self.drift_detector.update(error=error, t=self.curr_time)
-            self.curr_time += 1
-            response = self.drift_detector.monitor()
-            if response == self.drift_detector.drift:
-                self.drift_alerting_cts += 1
+        if self.use_drift_adaptation:
+            for error, t in zip(loss, timestamp):
+                self.drift_detector.update(error=error, t=self.curr_time)
+                self.curr_time += 1
+                response = self.drift_detector.monitor()
+                if response == self.drift_detector.drift:
+                    self.drift_alerting_cts += 1
 
         # use static threshold
         y_pred1 = [0 if loss[idx] <= self.threshold else 1 for idx in range(len(loss))]
@@ -125,7 +124,7 @@ class LSTM_autoencoder:
             self.dynamic_thresholds += [self.threshold] * len(y_pred2)
         else:
             extent = stats.percentileofscore(self.svd_entropies, entropy) / 100.0
-            extent = 1.5 - max(extent, 1.0 - extent)
+            extent = 1.0 - max(extent, 1.0 - extent)
             threshold_adapted = self.threshold * extent
             y_pred2 = [0 if loss[idx] <= threshold_adapted else 1 for idx in range(len(loss))]
             self.dynamic_thresholds += [threshold_adapted] * len(y_pred2)
@@ -138,7 +137,7 @@ class LSTM_autoencoder:
         if self.use_drift_adaptation:
             if self.drift_alerting_cts >= self.drift_count_limit:
                 if len(self.data_for_retrain) > self.window * 5:
-                    print('Drift occured')
+                    print('Drift occurred')
                     start_time = time.time()
                     tmp = pd.DataFrame(columns=['values'])
                     tmp['value'] = self.data_for_retrain
@@ -154,15 +153,15 @@ class LSTM_autoencoder:
                     self.data_for_retrain = []
                 else:
                     self.data_for_retrain += funcy.lflatten(X.flatten())
-                    print('?&', len(self.data_for_retrain))
         return y_pred1, y_pred2
 
-    def plot(self, datatest, threshold_type='dynamic'):
+    def plot(self, datatest, threshold_type='static'):
         loss_df = pd.DataFrame([])
         loss_df['value'] = self.loss
         loss_df['timestamp'] = datatest['timestamp'].tolist()
         arranged_loss = loss_df
-
+        arranged_loss = arranged_loss
+        self.predicted[threshold_type] = self.predicted[threshold_type]
         fig = go.Figure()
 
         fig.add_trace(go.Scatter(x=arranged_loss.index.tolist(), y=arranged_loss['value'].tolist(), name='Test loss'))
@@ -179,6 +178,7 @@ class LSTM_autoencoder:
         x_fn, y_fn = [], []
 
         datatest.reset_index(inplace=True)
+        loss_df = loss_df.reset_index()
         for tm, row in loss_df.iterrows():
             if tm in datatest.index:
                 if self.predicted[threshold_type][tm] == 1 and \

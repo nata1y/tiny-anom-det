@@ -5,6 +5,8 @@ import os
 import funcy
 import mock
 from skopt.callbacks import EarlyStopper
+
+from analysis.postanalysis import test_statistics
 from utils import plot_general
 from sklearn.metrics import hamming_loss, cohen_kappa_score
 from skopt import gp_minimize
@@ -17,7 +19,7 @@ import datetime
 import time
 import numpy as np
 from model_collection import *
-from settings import entropy_params, data_in_memory_sz
+from settings import entropy_params, data_in_memory_sz, no_optimization
 from drift_detectors.drift_detector_wrapper import DriftDetectorWrapper
 
 
@@ -53,7 +55,6 @@ def fit_base_model(model_params, for_optimization=True):
         data_in_memory = copy.deepcopy(data_train)
 
     start = time.time()
-    # ECDD(0.2, w=0.25, l=0.25)
     drift_detector = dd
     # create models with hyper-parameters
     if name == 'sarima':
@@ -158,6 +159,7 @@ def fit_base_model(model_params, for_optimization=True):
         print('Plotting..........')
         plot_general(model, dataset, type, name, data_test,
                      y_pred_total_e, filename)
+        return
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -194,8 +196,8 @@ def fit_base_model(model_params, for_optimization=True):
             'f1-noe': met_total_noe[2][-1],
         }, ignore_index=True)
         stats_full.to_csv(f'results/{dataset}_{type}_stats_{name}_drift_{dname}.csv', index=False)
-        stats_full.to_excel(f'results/{dataset}_{type}_stats_{name}_drift_{dname}.xlsx', index=False)
     # return specificity if no anomalies, else return f1 score
+    # can also just ignore tss with no anomalies...
     if data_test['is_anomaly'].tolist().count(1) == 0:
         return 1.0 - met_total_noe[0][-1]
     else:
@@ -205,19 +207,23 @@ def fit_base_model(model_params, for_optimization=True):
 if __name__ == '__main__':
     # load already found hyperparameters
     try:
-       hp = pd.read_csv('hyperparams_test.csv')
+       hp = pd.read_csv('hyperparams.csv')
     except:
        hp = pd.DataFrame([])
 
-    continuer = True
     for dname, (dd, use_drift_adapt) in drift_detectors.items():
         if dname == 'ECDD':
             dd = dd()
-        else:
+        elif use_drift_adapt:
             dd = DriftDetectorWrapper(dd)
-        for dataset, type in [('NAB', 'windows'), ('yahoo', 'real')]:
+        else:
+            dd = None
+
+        dname = 'test'
+        for dataset, type in [('NAB', 'windows'), ('kpi', 'train'), ('yahoo', 'real'),
+                              ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')]:
             # options:
-            # ('kpi', 'fit'), ('NAB', 'windows'), ('NAB', 'relevant'),
+            # ('kpi', 'train'), ('NAB', 'windows'),
             # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
 
             anomaly_window = step = entropy_params[f'{dataset}_{type}']['window']
@@ -253,10 +259,12 @@ if __name__ == '__main__':
                                 lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
                             data['timestamp'] = data['timestamp'].apply(
                                 lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
-                            data = data[-3000:]
-                            data_test_ = data_test[:25000]
 
-                        if True:
+                            # if not enough memory -- can use smaller ts
+                            # data = data[-3000:]
+                            # data_test_ = data_test[:25000]
+
+                        if no_optimization:
                             try:
                                 bo_result = mock.Mock()
                                 if not hp.empty and not hp[(hp['filename'] == filename.replace('.csv', '')) &
