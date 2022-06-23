@@ -212,7 +212,7 @@ if __name__ == '__main__':
        hp = pd.DataFrame([])
 
     for dname, (dd, use_drift_adapt) in drift_detectors.items():
-        if dname == 'ECDD':
+        if dname == 'ecdd':
             dd = dd()
         elif use_drift_adapt:
             dd = DriftDetectorWrapper(dd)
@@ -220,7 +220,7 @@ if __name__ == '__main__':
             dd = None
 
         dname = 'test'
-        for dataset, type in [('NAB', 'windows'), ('kpi', 'train'), ('yahoo', 'real'),
+        for dataset, type in [('yahoo', 'real'), ('NAB', 'windows'), ('kpi', 'train'),
                               ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')]:
             # options:
             # ('kpi', 'train'), ('NAB', 'windows'),
@@ -259,7 +259,7 @@ if __name__ == '__main__':
                                 lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
                             data['timestamp'] = data['timestamp'].apply(
                                 lambda x: datetime.datetime.utcfromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S'))
-
+                            data_test_ = data_test
                             # if not enough memory -- can use smaller ts
                             # data = data[-3000:]
                             # data_test_ = data_test[:25000]
