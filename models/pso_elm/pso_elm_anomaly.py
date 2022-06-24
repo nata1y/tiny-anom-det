@@ -44,7 +44,7 @@ from settings import inercia_inicial, c1, c2, crit, inercia_final, xmax, split_d
 class PSO_ELM_anomaly:
     def __init__(self, dataset, datatype, filename, drift_detector, use_drift,
                  n=500, lags=5, qtd_neurons=10, num_particles=10, limit=10, w=0.25, c=0.25,
-                 magnitude=5, entropy_window=100, error_threshold=0.1):
+                 magnitude=5.0, entropy_window=100, error_threshold=1.0):
         '''
         :param n: fit/retrain size
         :param lags: amount of lags in input
@@ -229,7 +229,7 @@ class PSO_ELM_anomaly:
         MAE = self.error_stream / len(stream)
         wd = 2
 
-        legend_place = (1.13, 0.85)
+        legend_place = (0.85, 0.90)
 
         eixox = [0, len(stream)]
         erro_eixoy = [0, 0.2]
@@ -247,8 +247,6 @@ class PSO_ELM_anomaly:
         else:
             grafico1.set_title("Real dataset and forecast | MAE: %.3f |" % (MAE))
 
-        grafico1.axvline(-1000, linewidth=wd,
-                         linestyle='dashed', label='Anomaly Batch', color='orange')
         for i in range(len(self.anomalous_batches)):
             counter = self.anomalous_batches[i]
             grafico1.axvline(counter,
@@ -260,7 +258,8 @@ class PSO_ELM_anomaly:
                        min(np.min(stream), np.min(self.predictions_df['predictions'])) - .05,
                        max(np.max(stream), np.max(self.predictions_df['predictions'])) + .05])
         offset = len(stream) - len(labels)
-        grafico1.legend(loc='best', bbox_to_anchor=legend_place, ncol=1,
+        grafico1.legend(loc='best',
+                        bbox_to_anchor=legend_place, ncol=1,
                         fancybox=True, shadow=True)
         plt.xticks(x_intervalos, rotation=45)
 
@@ -271,12 +270,6 @@ class PSO_ELM_anomaly:
                       self.loss_thresholds[threshold_type], linewidth=wd,
                       linestyle='dashed', color='m', label='Loss threshold')
         grafico2.set_title("Forecasting Error")
-
-        grafico2.axvline(-1000, linewidth=wd,
-                         linestyle='dashed', label='Anomaly Batch', color='green')
-        for i in range(len(self.anomalous_batches)):
-            counter = self.anomalous_batches[i]
-            grafico2.axvline(counter, linewidth=wd, linestyle='dashed', color='green')
 
         fp_idx = [offset + x for x in range(len(labels))
                   if labels[x] == 0 and self.results[threshold_type][x] == 1]
@@ -291,7 +284,7 @@ class PSO_ELM_anomaly:
 
         plt.ylabel('MAE')
         plt.xlabel('Time')
-        grafico2.legend(loc='best',
+        grafico2.legend(loc='best', bbox_to_anchor=legend_place,
                         ncol=1, fancybox=True, shadow=True)
         grafico2.axis([eixox[0], eixox[1], erro_eixoy[0],
                        max(np.max(self.predictions_df['errors']) + 0.05,

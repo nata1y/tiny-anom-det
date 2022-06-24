@@ -80,16 +80,12 @@ class SpectralResidual:
                 except:
                     pass
         self.mean_entropy = np.mean([v for v in self.svd_entropies if pd.notna(v)])
-        print(self.mean_entropy)
         self.boundary_bottom = self.mean_entropy - \
                                self.entropy_factor * \
                                np.std([v for v in self.svd_entropies if pd.notna(v)])
         self.boundary_up = self.mean_entropy + \
                            self.entropy_factor * \
                            np.std([v for v in self.svd_entropies if pd.notna(v)])
-
-        print(self.boundary_up, self.boundary_bottom)
-
         result = self.__anomaly_frame
         if self.use_drift_adaptation:
             self.drift_detector.record(result['score'])

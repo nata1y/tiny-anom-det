@@ -157,9 +157,10 @@ def fit_base_model(model_params, for_optimization=True):
 
     if not for_optimization:
         print('Plotting..........')
+        # use y_pred_total_e (for entropy threshold) or
+        # y_pred_total_noe for non entropy threshold
         plot_general(model, dataset, type, name, data_test,
                      y_pred_total_e, filename)
-        return
 
     print('saving results')
     predtime = np.mean(pred_time)
@@ -206,10 +207,7 @@ def fit_base_model(model_params, for_optimization=True):
 
 if __name__ == '__main__':
     # load already found hyperparameters
-    try:
-       hp = pd.read_csv('hyperparams.csv')
-    except:
-       hp = pd.DataFrame([])
+    hp = pd.DataFrame([])
 
     for dname, (dd, use_drift_adapt) in drift_detectors.items():
         if dname == 'ecdd':
@@ -220,8 +218,9 @@ if __name__ == '__main__':
             dd = None
 
         dname = 'test'
-        for dataset, type in [('yahoo', 'A1Benchmark'), ('NAB', 'windows'), ('kpi', 'train'),
-                              ('yahoo', 'A2Benchmark'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')]:
+        for dataset, type in [('yahoo', 'A1Benchmark'), ('yahoo', 'A2Benchmark'),
+                              ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
+                              ('NAB', 'windows'), ('kpi', 'train')]:
 
             anomaly_window = step = entropy_params[f'{dataset}_{type}']['window']
 
@@ -235,7 +234,7 @@ if __name__ == '__main__':
 
                 try:
                     stats_batched = pd.read_csv(
-                        f'results/entropy_addition/{dataset}_{type}_stats_{name}_batched_test.csv')
+                        f'results/entropy_addition/{dataset}_{type}_stats_{name}_batched.csv')
                 except:
                     stats_batched = pd.DataFrame([])
 

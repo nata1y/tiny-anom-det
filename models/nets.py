@@ -25,7 +25,7 @@ class LSTM_autoencoder:
     loss = []
 
     def __init__(self, X_shape, dataset, datatype, filename, drift_detector, use_drift,
-                 magnitude=1.5, drift_count_limit=10):
+                 magnitude=5.0, drift_count_limit=10):
 
         self.model = Sequential()
         self.model.add(LSTM(128, input_shape=(X_shape[0], X_shape[1])))
