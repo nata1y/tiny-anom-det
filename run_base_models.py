@@ -220,11 +220,8 @@ if __name__ == '__main__':
             dd = None
 
         dname = 'test'
-        for dataset, type in [('yahoo', 'real'), ('NAB', 'windows'), ('kpi', 'train'),
-                              ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')]:
-            # options:
-            # ('kpi', 'train'), ('NAB', 'windows'),
-            # ('yahoo', 'real'), ('yahoo', 'synthetic'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')
+        for dataset, type in [('yahoo', 'A1Benchmark'), ('NAB', 'windows'), ('kpi', 'train'),
+                              ('yahoo', 'A2Benchmark'), ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark')]:
 
             anomaly_window = step = entropy_params[f'{dataset}_{type}']['window']
 

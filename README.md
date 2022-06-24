@@ -59,7 +59,10 @@ We have used following top 5 drift detectors from `skmultiflow` library, and the
 * `HDDM_W`
 * `ECDD`
 
+### Running project
 
-
-
-
+```
+pip install -r requirements.txt
+pip install models/sr/.
+python run_base_models.py
+```
