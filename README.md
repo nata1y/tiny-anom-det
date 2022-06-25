@@ -1,11 +1,11 @@
 Mini-Anomaly detection library for univariate streams
 ---------
 
-This repository includes anomaly detection tools created, modified and researched during thesis internship at ING.
-The library includes 4 most promising methods for streaming incident detection, namely,
-Spectral Residuals, Long SHort-Term Memory Auto Encoder, SARIMA, and Particle Swarm Optimization of Extreme Learning Machines.
+This library includes 4 most promising methods for streaming incident detection, namely,
+Spectral Residuals, Long Short-Term Memory Auto Encoder, SARIMA, and Particle Swarm Optimization of Extreme Learning Machines.
 In addition, every model incorporates entropy-based anomaly threshold
 Library includes the set of methods for feature analysis, and drift detector wrapper for the given models.
+This repository includes anomaly detection tools created, modified and researched during thesis internship at ING.
 
 
 ### Project structure:
@@ -15,7 +15,7 @@ Library includes the set of methods for feature analysis, and drift detector wra
 │   ├── deprecated              files not used in final library version. Includes e.g. Catch22 and FFORMA feature extraction
 │   ├── entropy_modelling.py    script for modeling per-batch entropy over the set of time series
 │   └── postanalysis.py         plotting
-├── datasets                    extract you data here. Under {dataset_name} folder: yahoo/real
+├── datasets                    extract you data here. Under {dataset_name} folder
 ├── drift_detectors             drift detector and wrappers used with models
 ├── models                      main models
 │   ├── pso_elm                 PSO-ELM
@@ -40,7 +40,7 @@ Library includes the set of methods for feature analysis, and drift detector wra
 
 ### PSO-ELM
 PSO-ELM model is created by by Gustavo Oliveira (Universidade Federal de Pernambuco, Recife, Brasil)
-Current anomaly detector is a tweak on PSO-ELM-B model00
+Current anomaly detector is a tweak on PSO-ELM-B model
 https://ieeexplore.ieee.org/document/8371949
 https://github.com/GustavoHFMO/IDPSO-ELM-S
 
