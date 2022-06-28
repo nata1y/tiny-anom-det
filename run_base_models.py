@@ -217,7 +217,6 @@ if __name__ == '__main__':
         else:
             dd = None
 
-        dname = 'test'
         for dataset, type in [('yahoo', 'A1Benchmark'), ('yahoo', 'A2Benchmark'),
                               ('yahoo', 'A3Benchmark'), ('yahoo', 'A4Benchmark'),
                               ('NAB', 'windows'), ('kpi', 'train')]:
