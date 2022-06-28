@@ -21,3 +21,4 @@ ordpy==1.0.6
 antropy==0.1.4
 mock==4.0.3
 kaleido==0.2.1
+protobuf==3.20.*

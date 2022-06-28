@@ -63,6 +63,8 @@ We have used following top 5 drift detectors from `skmultiflow` library, and the
 
 ### Running project
 
+Please, use python version **3.7.0**
+
 ```
 pip install -r requirements.txt
 pip install models/sr/.
