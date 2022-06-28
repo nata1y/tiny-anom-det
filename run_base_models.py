@@ -169,12 +169,13 @@ def fit_base_model(model_params, for_optimization=True):
     # calculate batched metrics per 60 timepoints
     # exact batch size may vary...
     # can also smooth batch metrics via rolling metrices
+    data_reset = data_test.reset_index()['is_anomaly']
     for i in range(0, len(data_test['is_anomaly']), 60):
-        met_total = precision_recall_fscore_support(data_test['is_anomaly'][i:i+60],
+        met_total = precision_recall_fscore_support(data_reset[i:i+60],
                                                     y_pred_total_e[:data_test.shape[0]][i:i+60])
         batch_metrices_f1_e.append(met_total[2][-1])
 
-        met_total = precision_recall_fscore_support(data_test['is_anomaly'][i:i+60],
+        met_total = precision_recall_fscore_support(data_reset[i:i+60],
                                                     y_pred_total_noe[:data_test.shape[0]][i:i+60])
         batch_metrices_f1_noe.append(met_total[2][-1])
 
